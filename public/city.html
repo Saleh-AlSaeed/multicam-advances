@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ar" class="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>غرفة المدينة</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>🏙️ مدينة - نشر الكاميرا والمايك</div>
+      <div class="toolbar">
+        <button id="logoutBtn" class="btn danger" type="button">خروج</button>
+      </div>
+    </header>
+    <div class="container">
+      <div class="card">
+        <h3>تجهيز الاتصال</h3>
+        <div id="status" class="small" style="margin:6px 0 12px;">جاري طلب إذن الكاميرا/المايك…</div>
+        <div class="grid cols-2">
+          <div>
+            <label>الكاميرا:</label>
+            <select id="camSel" class="input"></select>
+          </div>
+          <div>
+            <label>المايك:</label>
+            <select id="micSel" class="input"></select>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="permBtn" class="btn secondary" type="button" style="display:none">منح إذن الكاميرا/المايك</button>
+          <button id="joinBtn" class="btn" type="button">اتصال</button>
+          <button id="leaveBtn" class="btn secondary" type="button" disabled>مغادرة</button>
+        </div>
+        <hr/>
+        <div class="video-grid cols-1">
+          <div class="video-tile"><video id="preview" autoplay playsinline muted></video><div class="label">المعاينة</div></div>
+        </div>
+      </div>
+    </div>
+    <script defer src="/vendor/livekit-client.umd.min.js"></script>
+    <script defer src="/common.js?v=10"></script>
+    <script defer src="/city.js?v=10"></script>
+  </body>
+</html>

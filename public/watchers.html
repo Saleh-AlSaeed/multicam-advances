@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ar" class="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>المشاهدون</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>🎬 صفحة المشاهد</div>
+      <div class="toolbar">
+        <button id="nowBtn" class="btn success" disabled>مشاهدة الآن</button>
+        <button id="logoutBtn" class="btn danger">خروج</button>
+      </div>
+    </header>
+    <div class="container">
+      <div class="card">
+        <h3>البث المتاح</h3>
+        <div id="status" class="small">جاري التحضير...</div>
+      </div>
+    </div>
+    <script src="/common.js?v=10"></script>
+    <script>
+      (async function() {
+        const s = requireAuth();
+        if (!s || s.role !== 'watcher') { location.href = '/'; return; }
+        logoutBtnHandler(document.getElementById('logoutBtn'));
+        const data = await API.getActiveWatch();
+        const status = document.getElementById('status');
+        const nowBtn = document.getElementById('nowBtn');
+        if (!data) {
+          status.textContent = 'لا يوجد بث نشط حاليًا.';
+        } else {
+          status.textContent = 'وجد بث نشط.';
+          nowBtn.disabled = false;
+          nowBtn.addEventListener('click', () => {
+            window.open('/watch.html?id=' + data.id, '_blank');
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>

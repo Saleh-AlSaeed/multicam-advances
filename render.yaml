@@ -1,0 +1,18 @@
+name: multicam-advances
+
+services:
+  - name: app
+    type: web
+    ports:
+      - port: 8080
+        protocol: http
+    env:
+      - key: LIVEKIT_URL
+        value: wss://multicam-national-day-htyhphzo.livekit.cloud
+      - key: LIVEKIT_API_KEY
+        value: <APITPYikfLT2XJX>
+      - key: LIVEKIT_API_SECRET
+        value: <yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC>
+    routes:
+      - path: /
+        destination: app

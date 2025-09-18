@@ -17,15 +17,17 @@ app.use(morgan('dev'));
 app.use(cors());
 
 // --------- ENV ---------
-const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
-const PORT = Number(process.env.PORT) || 8080; // important for Koyeb
+const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://REPLACE_ME.livekit.cloud';
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
+const PORT = Number(process.env.PORT) || 8080;
 
 // --------- STATIC ---------
 app.use(express.static(path.join(__dirname, 'public')));
-// Serve livekit-client from node_modules through /vendor
-app.use('/vendor', express.static(path.join(__dirname, 'node_modules', 'livekit-client', 'dist')));
+app.use('/vendor', express.static(path.join(__dirname, 'node_modules', 'livekit-client', 'dist'), {
+  immutable: true,
+  maxAge: '1y',
+}));
 
 // --------- In-memory stores ---------
 const USERS = {
@@ -44,7 +46,7 @@ const USERS = {
   "مشاهد 6": { password: "Watch6", role: "watcher" },
 };
 
-const sessions = new Map(); // token -> { username, role, room, createdAt }
+const sessions = new Map();
 
 // --------- Persistence for watch sessions ---------
 const DATA_DIR = path.join(__dirname, 'data');
@@ -167,10 +169,7 @@ app.get('/api/watch/:id', authMiddleware(), (req, res) => {
   res.json(item);
 });
 
-// Root + health
-app.get('/', (_, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+app.get('/', (_, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 app.get('/health', (_, res) => res.status(200).send('ok'));
 
 app.listen(PORT, () => {

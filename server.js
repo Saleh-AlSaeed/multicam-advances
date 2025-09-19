@@ -5,6 +5,7 @@ import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
+import https from 'https';
 import { fileURLToPath } from 'url';
 import { AccessToken } from 'livekit-server-sdk';
 
@@ -23,17 +24,64 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H
 const PORT = process.env.PORT || 8080;
 
 // ---------- STATIC ----------
-// نخدم ملفات المشروع العامة
 app.use(express.static(path.join(__dirname, 'public')));
 
-// نخدم vendor مع إجبار نوع MIME لملفات JS (احترازيًا)
-app.use('/vendor', express.static(path.join(__dirname, 'public', 'vendor'), {
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.js')) {
-      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+// نضمن وجود مجلد vendor
+const VENDOR_DIR = path.join(__dirname, 'public', 'vendor');
+if (!fs.existsSync(VENDOR_DIR)) fs.mkdirSync(VENDOR_DIR, { recursive: true });
+
+// مسار الملف الهدف
+const LK_UMD_FILE = path.join(VENDOR_DIR, 'livekit-client.umd.min.js');
+const LK_UMD_URLS = [
+  // نحاول unpkg أولاً (عادة يعمل من بيئة Render/Koyeb حتى لو محجوب بالمتصفح)
+  'https://unpkg.com/@livekit/client@2.3.0/dist/livekit-client.umd.min.js',
+  // احتياطي: jsDelivr
+  'https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js'
+];
+
+// دالة تنزيل https بسيطة (بدون حزم إضافية)
+function downloadToFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(destPath);
+    https.get(url, (res) => {
+      if (res.statusCode !== 200) {
+        file.close(() => fs.unlink(destPath, () => {}));
+        return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+      }
+      res.pipe(file);
+      file.on('finish', () => file.close(() => resolve()));
+    }).on('error', (err) => {
+      file.close(() => fs.unlink(destPath, () => {}));
+      reject(err);
+    });
+  });
+}
+
+// مسار يُقدم الملف محليًا، وإن لم يوجد يحمّله ويكاشّه ثم يقدمه
+app.get('/vendor/livekit-client.umd.min.js', async (req, res) => {
+  try {
+    if (!fs.existsSync(LK_UMD_FILE) || fs.statSync(LK_UMD_FILE).size < 10_000) {
+      // نحاول عدة مصادر حتى ينجح واحد
+      let lastErr = null;
+      for (const url of LK_UMD_URLS) {
+        try {
+          await downloadToFile(url, LK_UMD_FILE);
+          break;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      if (!fs.existsSync(LK_UMD_FILE)) {
+        return res.status(503).send('Failed to fetch LiveKit UMD: ' + (lastErr?.message || 'unknown'));
+      }
     }
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    fs.createReadStream(LK_UMD_FILE).pipe(res);
+  } catch (e) {
+    res.status(500).send('Error serving LiveKit UMD');
   }
-}));
+});
 
 // ---------- In-memory stores ----------
 const USERS = {
@@ -96,25 +144,14 @@ function authMiddleware(required = null) {
 }
 
 async function buildToken({ identity, roomName, canPublish = false, canSubscribe = true, metadata = '{}' }) {
-  const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-    identity,
-    metadata
-  });
-  at.addGrant({
-    roomJoin: true,
-    room: roomName,
-    canPublish,
-    canSubscribe,
-    canPublishData: true
-  });
+  const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { identity, metadata });
+  at.addGrant({ roomJoin: true, room: roomName, canPublish, canSubscribe, canPublishData: true });
   at.ttl = 60 * 60 * 4; // 4h
   return await at.toJwt();
 }
 
 // ---------- Routes ----------
-app.get('/api/config', (_, res) => {
-  res.json({ LIVEKIT_URL });
-});
+app.get('/api/config', (_, res) => { res.json({ LIVEKIT_URL }); });
 
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
@@ -133,18 +170,13 @@ app.post('/api/logout', authMiddleware(), (req, res) => {
   res.json({ ok: true });
 });
 
-// Create LiveKit token
 app.post('/api/token', authMiddleware(), async (req, res) => {
   const { roomName, publish = false, subscribe = true, identity } = req.body || {};
-  if (!roomName || !identity) {
-    return res.status(400).json({ error: 'roomName and identity are required' });
-  }
+  if (!roomName || !identity) return res.status(400).json({ error: 'roomName and identity are required' });
   try {
     const jwt = await buildToken({
-      identity,
-      roomName,
-      canPublish: !!publish,
-      canSubscribe: !!subscribe,
+      identity, roomName,
+      canPublish: !!publish, canSubscribe: !!subscribe,
       metadata: JSON.stringify({ by: req.user.username, role: req.user.role })
     });
     res.json({ token: jwt, url: LIVEKIT_URL });
@@ -154,7 +186,6 @@ app.post('/api/token', authMiddleware(), async (req, res) => {
   }
 });
 
-// Admin creates a watch session
 app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
   const { selection } = req.body || {};
   if (!Array.isArray(selection) || selection.length === 0 || selection.length > 6) {
@@ -193,23 +224,18 @@ app.get('/api/watch/active', authMiddleware(), (req, res) => {
   const active = [...(watchSessions || [])].reverse().find(w => w.active);
   res.json(active || null);
 });
-app.get('/api/watch', authMiddleware('admin'), (req, res) => {
-  res.json(watchSessions || []);
-});
+app.get('/api/watch', authMiddleware('admin'), (req, res) => { res.json(watchSessions || []); });
 app.get('/api/watch/:id', authMiddleware(), (req, res) => {
   const item = (watchSessions || []).find(w => w.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'not_found' });
   res.json(item);
 });
 
-// Root
 app.get('/', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  if (LIVEKIT_URL.includes('REPLACE_ME')) {
-    console.log('⚠️  Please set LIVEKIT_URL in .env');
-  }
+  if (LIVEKIT_URL.includes('REPLACE_ME')) console.log('⚠️  Please set LIVEKIT_URL in .env');
 });

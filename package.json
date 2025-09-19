@@ -1,6 +1,6 @@
 {
-  "name": "livekit-app",
-  "version": "1.1.2",
+  "name": "livekit-mux-app",
+  "version": "1.1.1",
   "type": "module",
   "private": true,
   "scripts": {
@@ -13,6 +13,7 @@
     "express": "^4.19.2",
     "livekit-server-sdk": "^2.5.3",
     "morgan": "^1.10.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "@livekit/client": "^2.3.0"
   }
 }

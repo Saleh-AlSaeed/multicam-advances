@@ -1,67 +1,21 @@
 <!doctype html>
-<html lang="ar" class="rtl">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>لوحة المشرف</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <header class="topbar">
-      <div>🛠️ لوحة المشرف (admin)</div>
-      <div class="toolbar">
-        <button id="viewModeBtn" class="btn">طريقة المشاهدة</button>
-        <button id="applyBtn" class="btn">تطبيق التغييرات</button>
-        <button id="stopBtn" class="btn danger" disabled>إيقاف البث</button>
-        <button id="goWatchBtn" class="btn success" disabled>مشاهدة الآن</button>
-        <label class="badge"><input type="checkbox" id="monitorAudio"> تشغيل صوت المعاينة</label>
-        <button id="logoutBtn" class="btn danger">خروج</button>
-      </div>
-    </header>
-    <div class="container">
-      <div class="card">
-        <h3>معاينة غرف المدن (6)</h3>
-        <p class="small">هنا ترى الكاميرات/المايكات عند اتصال كل مدينة.</p>
-        <div id="previewGrid" class="video-grid cols-3"></div>
-      </div>
-    </div>
-    <canvas id="mixerCanvas" class="hidden" width="1920" height="1080"></canvas>
-    <div id="viewModal" class="modal">
-      <div class="box">
-        <h3>طريقة المشاهدة</h3>
-        <p class="small">اختر عدد الكاميرات للمكس.</p>
-        <div>
-          <label>عدد الكاميرات:</label>
-          <select id="camCount" class="input">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
-            <option value="6" selected>6</option>
-          </select>
-        </div>
-        <div id="slots"></div>
-        <hr/>
-        <div class="toolbar">
-          <button id="createWatchBtn" class="btn">ارتباط للمشاهدة</button>
-          <button id="closeModalBtn" class="btn secondary">إغلاق</button>
-        </div>
-      </div>
-    </div>
+<html lang="ar">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Admin</title>
+</head>
+<body>
+  <h1>لوحة المشرف</h1>
+  <button id="logoutBtn">خروج</button>
 
-    <!-- LiveKit: محلي + بديل CDN تلقائي -->
-    <script defer src="/vendor/livekit-client.umd.min.js"
-      onerror="(function(){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js';s.defer=true;s.onerror=function(){var b=document.createElement('script');b.src='https://unpkg.com/livekit-client@latest/dist/livekit-client.umd.js';b.defer=true;document.head.appendChild(b)};document.head.appendChild(s);}())">
-    </script>
-    <script defer src="/common.js"></script>
-    <script defer src="/admin.js"></script>
-    <!-- حاول المحلي أولا -->
-<script defer src="/vendor/livekit-client.umd.min.js"></script>
-<!-- لو فشل المحلي، هذا الملف يضمن التحميل من CDN -->
-<script defer src="/livekit-loader.js"></script>
+  <!-- LiveKit -->
+  <script defer src="/vendor/livekit-client.umd.min.js"></script>
+  <script defer src="/livekit-loader.js"></script>
 
-<script defer src="/common.js"></script>
-<script defer src="/admin.js"></script>
-  </body>
+  <!-- سكربتات المشروع -->
+  <script defer src="/common.js"></script>
+  <script defer src="/logout-fix.js"></script>
+  <script defer src="/admin.js"></script>
+</body>
 </html>

@@ -1,23 +1,64 @@
-<!DOCTYPE html>
-<html lang="ar">
-<head>
-  <meta charset="UTF-8">
-  <title>لوحة المشرف</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <header class="topbar">
-    <button id="logoutBtn" class="btn-exit">خروج</button>
-    <h1>لوحة المشرف</h1>
-  </header>
+<!doctype html>
+<html lang="ar" class="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>لوحة المشرف</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>🛠️ لوحة المشرف (admin)</div>
+      <div class="toolbar">
+        <button id="viewModeBtn" class="btn">طريقة المشاهدة</button>
+        <button id="applyBtn" class="btn">تطبيق التغييرات</button>
+        <button id="stopBtn" class="btn danger" disabled>إيقاف البث</button>
+        <button id="goWatchBtn" class="btn success" disabled>مشاهدة الآن</button>
+        <label class="badge"><input type="checkbox" id="monitorAudio"> تشغيل صوت المعاينة</label>
+        <button id="logoutBtn" class="btn danger">خروج</button>
+      </div>
+    </header>
+    <div class="container">
+      <div class="card">
+        <h3>معاينة غرف المدن (6)</h3>
+        <p class="small">هنا ترى الكاميرات/المايكات عند اتصال كل مدينة.</p>
+        <div id="previewGrid" class="video-grid cols-3"></div>
+      </div>
+    </div>
+    <canvas id="mixerCanvas" class="hidden" width="1920" height="1080"></canvas>
 
-  <div class="container">
-    <h2>مراقبة الجلسة</h2>
-    <div id="previewGrid" class="video-grid cols-3"></div>
-  </div>
+    <div id="viewModal" class="modal">
+      <div class="box">
+        <h3>طريقة المشاهدة</h3>
+        <p class="small">اختر عدد الكاميرات للمكس.</p>
+        <div>
+          <label>عدد الكاميرات:</label>
+          <select id="camCount" class="input">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6" selected>6</option>
+          </select>
+        </div>
+        <div id="slots"></div>
+        <hr/>
+        <div class="toolbar">
+          <button id="createWatchBtn" class="btn">ارتباط للمشاهدة</button>
+          <button id="closeModalBtn" class="btn secondary">إغلاق</button>
+        </div>
+      </div>
+    </div>
 
-  <!-- ✅ تحميل LiveKit من CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
-  <script src="admin.js"></script>
-</body>
+    <!-- LiveKit UMD من CDN — يجب أن يكون قبل سكربتاتك -->
+    <script src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
+    <script>
+      if (!window.livekit) { alert('LiveKit client did not load'); }
+    </script>
+
+    <!-- سكربتات المشروع -->
+    <script src="/common.js"></script>
+    <script src="/admin.js"></script>
+  </body>
 </html>

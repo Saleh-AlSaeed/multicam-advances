@@ -80,8 +80,7 @@ function requireAuth() {
 }
 
 function logoutBtnHandler(btn) {
-  if (!btn) return;
-  btn.addEventListener('click', async () => {
+  btn?.addEventListener('click', async () => {
     await API.logout();
     location.href = '/';
   });

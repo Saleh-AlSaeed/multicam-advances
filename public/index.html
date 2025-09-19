@@ -3,51 +3,35 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>تسجيل الدخول</title>
+    <title>الصفحة الرئيسية</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="topbar">
-      <div>🔐 نظام الربط بين 6 غرف - LiveKit</div>
-      <div class="small">جاهز</div>
+      <div>📌 القائمة الرئيسية</div>
     </header>
     <div class="container">
       <div class="card">
-        <h2>تسجيل الدخول</h2>
-        <p class="small">أدخل اسم المستخدم وكلمة المرور:</p>
-        <input id="username" class="input" placeholder="اسم المستخدم" />
-        <input id="password" class="input" placeholder="كلمة المرور" type="password" />
-        <button id="loginBtn" class="btn">دخول</button>
-        <hr/>
-        <p class="small">مستخدمون متاحون:</p>
-        <ul class="small">
-          <li>admin / admin123</li>
-          <li>مدينة رقم1 / City1 ... مدينة رقم6 / City6</li>
-          <li>مشاهد1 / Watch1 ... مشاهد6 / Watch6</li>
+        <h3>اختيار الدور</h3>
+        <ul>
+          <li><a class="btn" href="/admin.html">لوحة المشرف</a></li>
+          <li><a class="btn" href="/city.html?room=city-1">مدينة 1</a></li>
+          <li><a class="btn" href="/city.html?room=city-2">مدينة 2</a></li>
+          <li><a class="btn" href="/city.html?room=city-3">مدينة 3</a></li>
+          <li><a class="btn" href="/city.html?room=city-4">مدينة 4</a></li>
+          <li><a class="btn" href="/city.html?room=city-5">مدينة 5</a></li>
+          <li><a class="btn" href="/city.html?room=city-6">مدينة 6</a></li>
+          <li><a class="btn" href="/watch.html">المشاهدة</a></li>
         </ul>
       </div>
     </div>
-    <script src="/common.js"></script>
+
+    <!-- LiveKit UMD -->
+    <script src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
     <script>
-      (function () {
-        const s = API.session();
-        if (s) goTo(s.role, s.room);
-        const btn = document.getElementById('loginBtn');
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          try {
-            const data = await API.login(
-              document.getElementById('username').value.trim(),
-              document.getElementById('password').value.trim()
-            );
-            goTo(data.role, data.room);
-          } catch (e) {
-            alert(e.message || 'فشل الدخول');
-          } finally {
-            btn.disabled = false;
-          }
-        });
-      })();
+      if (!window.livekit) { alert('LiveKit client did not load'); }
     </script>
+    <script src="/common.js"></script>
+    <script src="/index.js"></script>
   </body>
 </html>

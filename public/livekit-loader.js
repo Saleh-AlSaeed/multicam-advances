@@ -9,10 +9,8 @@
   }
   function ensure(){
     if(window.livekit) return;
-    // المحاولة الأولى: jsDelivr
     load('https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js', function(){
       if(window.livekit) return;
-      // المحاولة الثانية: unpkg
       load('https://unpkg.com/livekit-client@latest/dist/livekit-client.umd.js', function(){});
     });
   }

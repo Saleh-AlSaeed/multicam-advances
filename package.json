@@ -1,5 +1,5 @@
 {
-  "name": "livekit-multicam-advance",
+  "name": "multicam-advances",
   "version": "1.0.0",
   "description": "Multi-user LiveKit demo with city, admin, and watch pages",
   "main": "server.js",

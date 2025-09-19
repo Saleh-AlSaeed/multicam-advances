@@ -1,15 +1,13 @@
 {
   "name": "livekit-mux-app",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "type": "module",
   "private": true,
   "scripts": {
-    "postinstall": "mkdir -p public/vendor && cp node_modules/@livekit/client/dist/livekit-client.umd.min.js public/vendor/",
     "dev": "node server.js",
     "start": "NODE_ENV=production node server.js"
   },
   "dependencies": {
-    "@livekit/client": "^2.3.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",

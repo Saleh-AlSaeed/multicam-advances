@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 import { AccessToken } from 'livekit-server-sdk';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname  = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
@@ -17,17 +17,26 @@ app.use(morgan('dev'));
 app.use(cors());
 
 // --------- ENV ---------
-const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
-const PORT = Number(process.env.PORT) || 8080;
+const LIVEKIT_URL       = process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
+const LIVEKIT_API_KEY   = process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
+const LIVEKIT_API_SECRET= process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
+const PORT              = Number(process.env.PORT) || 8080;
+
+// --------- STATIC PATHS (تتعامل مع بنية src/ أو الجذر) ---------
+const PUBLIC_DIR = fs.existsSync(path.join(__dirname, 'public'))
+  ? path.join(__dirname, 'public')
+  : path.join(__dirname, '..', 'public');
+
+const NODE_MODULES_DIR = fs.existsSync(path.join(__dirname, 'node_modules'))
+  ? path.join(__dirname, 'node_modules')
+  : path.join(__dirname, '..', 'node_modules');
 
 // --------- STATIC ---------
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(PUBLIC_DIR));
 app.use(
   '/vendor',
   express.static(
-    path.join(__dirname, 'node_modules', 'livekit-client', 'dist'),
+    path.join(NODE_MODULES_DIR, 'livekit-client', 'dist'),
     { immutable: true, maxAge: '1y' }
   )
 );
@@ -40,7 +49,7 @@ const USERS = {
   'مدينة رقم3': { password: 'City3', role: 'city', room: 'city-3' },
   'مدينة رقم4': { password: 'City4', role: 'city', room: 'city-4' },
   'مدينة رقم5': { password: 'City5', role: 'city', room: 'city-5' },
-  'مدينة رقم6': { password: 'City6', role: 'city', room: 'city-6' }, 
+  'مدينة رقم6': { password: 'City6', role: 'city', room: 'city-6' }, // تأكدنا أنها City6
   'مشاهد1': { password: 'Watch1', role: 'watcher' },
   'مشاهد2': { password: 'Watch2', role: 'watcher' },
   'مشاهد3': { password: 'Watch3', role: 'watcher' },
@@ -52,30 +61,36 @@ const USERS = {
 const sessions = new Map(); // token -> { token, username, role, room, createdAt }
 
 // --------- WATCH SESSIONS PERSISTENCE ---------
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR   = fs.existsSync(path.join(__dirname, 'data'))
+  ? path.join(__dirname, 'data')
+  : path.join(__dirname, '..', 'data');
 const WATCH_FILE = path.join(DATA_DIR, 'watchSessions.json');
 
 function loadWatchSessions() {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
     const txt = fs.readFileSync(WATCH_FILE, 'utf-8');
     return JSON.parse(txt);
-  } catch {
+  } catch (e) {
+    console.error('Failed to load watch sessions:', e);
     return [];
   }
 }
 function saveWatchSessions(list) {
   try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf-8');
-  } catch {}
+  } catch (e) {
+    console.error('Failed to save watch sessions:', e);
+  }
 }
 let watchSessions = loadWatchSessions(); // [{ id, roomName, selection, createdAt, active }]
 
 // --------- HELPERS ---------
 function authMiddleware(required = null) {
   return (req, res, next) => {
-    const hdr = req.headers.authorization || '';
+    const hdr   = req.headers.authorization || '';
     const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : null;
     if (!token || !sessions.has(token)) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -155,9 +170,11 @@ app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
   if (!Array.isArray(selection) || selection.length === 0 || selection.length > 6) {
     return res.status(400).json({ error: 'selection must be 1..6 entries' });
   }
-  const id = uuidv4();
+  const id       = uuidv4();
   const roomName = `watch-${id.slice(0, 8)}`;
-  watchSessions = (watchSessions || []).map((w) => ({ ...w, active: false }));
+
+  // تعطيل أي جلسة سابقة
+  watchSessions = (watchSessions || []).map(w => ({ ...w, active: false }));
   const record = { id, roomName, selection, createdAt: Date.now(), active: true };
   watchSessions.push(record);
   saveWatchSessions(watchSessions);
@@ -168,7 +185,7 @@ app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
 app.put('/api/watch/:id', authMiddleware('admin'), (req, res) => {
   const { id } = req.params;
   const { selection, active } = req.body || {};
-  const idx = (watchSessions || []).findIndex((w) => w.id === id);
+  const idx = (watchSessions || []).findIndex(w => w.id === id);
   if (idx === -1) return res.status(404).json({ error: 'not_found' });
   if (selection) watchSessions[idx].selection = selection;
   if (typeof active === 'boolean') watchSessions[idx].active = active;
@@ -178,7 +195,7 @@ app.put('/api/watch/:id', authMiddleware('admin'), (req, res) => {
 
 app.post('/api/watch/:id/stop', authMiddleware('admin'), (req, res) => {
   const { id } = req.params;
-  const idx = (watchSessions || []).findIndex((w) => w.id === id);
+  const idx = (watchSessions || []).findIndex(w => w.id === id);
   if (idx === -1) return res.status(404).json({ error: 'not_found' });
   watchSessions[idx].active = false;
   saveWatchSessions(watchSessions);
@@ -187,27 +204,27 @@ app.post('/api/watch/:id/stop', authMiddleware('admin'), (req, res) => {
 
 // قراءة الجلسات
 app.get('/api/watch/active', authMiddleware(), (_, res) => {
-  const active = [...(watchSessions || [])].reverse().find((w) => w.active);
+  const active = [...(watchSessions || [])].reverse().find(w => w.active);
   res.json(active || null);
 });
 app.get('/api/watch', authMiddleware('admin'), (_, res) => {
   res.json(watchSessions || []);
 });
 app.get('/api/watch/:id', authMiddleware(), (req, res) => {
-  const item = (watchSessions || []).find((w) => w.id === req.params.id);
+  const item = (watchSessions || []).find(w => w.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'not_found' });
   res.json(item);
 });
 
 // Root + health
 app.get('/', (_, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 app.get('/health', (_, res) => res.status(200).send('ok'));
 
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
   if (LIVEKIT_URL.includes('REPLACE_ME')) {
-    console.log('⚠️  Please set LIVEKIT_URL / API KEY / SECRET');
+    console.log('⚠️  Please set LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET');
   }
 });

@@ -5,7 +5,6 @@ import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
-import https from 'https';
 import { fileURLToPath } from 'url';
 import { AccessToken } from 'livekit-server-sdk';
 
@@ -26,99 +25,22 @@ const PORT = process.env.PORT || 8080;
 // ---------- STATIC ----------
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ---------- LiveKit UMD: local fallback provider ----------
-const VENDOR_DIR = path.join(__dirname, 'public', 'vendor');
-if (!fs.existsSync(VENDOR_DIR)) fs.mkdirSync(VENDOR_DIR, { recursive: true });
-const LK_UMD_FILE = path.join(VENDOR_DIR, 'livekit-client.umd.min.js');
-
-// مصادر موثوقة (يرجى إبقاء jsDelivr أولاً)
-const LK_UMD_URLS = [
-  'https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js',
-  'https://unpkg.com/@livekit/client@2.3.0/dist/livekit-client.umd.min.js',
-  'https://raw.githubusercontent.com/livekit/client-sdk-js/v2.3.0/dist/livekit-client.umd.min.js'
-];
-
-function downloadWithRedirects(url, destPath, { maxRedirects = 8, timeoutMs = 20000 } = {}) {
-  return new Promise((resolve, reject) => {
-    const visited = [];
-
-    function getOne(currentUrl, redirectsLeft) {
-      visited.push(currentUrl);
-      const req = https.get(currentUrl, { headers: { 'User-Agent': 'node/https livekit-fallback/1.0' } }, (res) => {
-        const { statusCode, headers } = res;
-        if ([301, 302, 303, 307, 308].includes(statusCode)) {
-          const loc = headers.location;
-          if (!loc) return reject(new Error(`Redirect ${statusCode} without Location`));
-          if (redirectsLeft <= 0) return reject(new Error(`Too many redirects: ${visited.join(' -> ')}`));
-          res.resume();
-          const nextUrl = new URL(loc, currentUrl).toString();
-          return getOne(nextUrl, redirectsLeft - 1);
-        }
-        if (statusCode !== 200) {
-          res.resume();
-          return reject(new Error(`HTTP ${statusCode} for ${currentUrl}`));
-        }
-        const tmp = destPath + '.part';
-        const out = fs.createWriteStream(tmp);
-        res.pipe(out);
-        out.on('finish', () => {
-          out.close(() => {
-            try {
-              if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-              fs.renameSync(tmp, destPath);
-              resolve();
-            } catch (e) { reject(e); }
-          });
-        });
-        out.on('error', (e) => {
-          try { fs.unlinkSync(tmp); } catch {}
-          reject(e);
-        });
-      });
-      req.setTimeout(timeoutMs, () => { req.destroy(new Error('Request timeout')); });
-      req.on('error', reject);
-    }
-
-    getOne(url, maxRedirects);
-  });
-}
-
-async function ensureLocalLiveKit() {
+// ✅ نخدم UMD من node_modules مباشرة بدون أي طلب خارجي
+const UMD_PATH = path.join(__dirname, 'node_modules', '@livekit', 'client', 'dist', 'livekit-client.umd.min.js');
+app.get('/vendor/livekit-client.umd.min.js', (req, res) => {
   try {
-    if (fs.existsSync(LK_UMD_FILE) && fs.statSync(LK_UMD_FILE).size > 10_000) return true;
-  } catch (_) {}
-
-  let lastErr = null;
-  for (const url of LK_UMD_URLS) {
-    try {
-      console.log('[LK UMD] fetching:', url);
-      await downloadWithRedirects(url, LK_UMD_FILE);
-      console.log('[LK UMD] saved:', LK_UMD_FILE);
-      return true;
-    } catch (e) {
-      lastErr = e;
-      console.warn('[LK UMD] failed from', url, String(e));
+    if (fs.existsSync(UMD_PATH)) {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.sendFile(UMD_PATH);
+    } else {
+      res.status(500).send('// LiveKit UMD not found in node_modules.');
     }
+  } catch (e) {
+    res.status(500).send('// Failed to serve LiveKit UMD.');
   }
-  console.error('[LK UMD] all sources failed', lastErr?.message || '');
-  return false;
-}
-
-// يخدم النسخة المحلية عند الطلب
-app.get('/vendor/livekit-client.umd.min.js', async (req, res) => {
-  const ok = await ensureLocalLiveKit();
-  if (!ok) {
-    return res
-      .status(503)
-      .type('text/plain; charset=utf-8')
-      .send('Failed to fetch LiveKit UMD fallback.');
-  }
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  fs.createReadStream(LK_UMD_FILE).pipe(res);
 });
 
-// ---------- App state ----------
+// ---------- In-memory stores ----------
 const USERS = {
   "admin": { password: "admin123", role: "admin" },
   "مدينة رقم1": { password: "City1", role: "city", room: "city-1" },
@@ -137,36 +59,45 @@ const USERS = {
 
 const sessions = new Map(); // token -> { username, role, room, createdAt }
 
+// ---------- Persistence for watch sessions ----------
 const DATA_DIR = path.join(__dirname, 'data');
 const WATCH_FILE = path.join(DATA_DIR, 'watchSessions.json');
 
 function loadWatchSessions() {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
     if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
-    return JSON.parse(fs.readFileSync(WATCH_FILE, 'utf-8'));
+    const txt = fs.readFileSync(WATCH_FILE, 'utf-8');
+    return JSON.parse(txt);
   } catch (e) {
     console.error('Failed to load watch sessions:', e);
     return [];
   }
 }
 function saveWatchSessions(list) {
-  try { fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf-8'); }
-  catch (e) { console.error('Failed to save watch sessions:', e); }
+  try {
+    fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Failed to save watch sessions:', e);
+  }
 }
 let watchSessions = loadWatchSessions();
 
-// ---------- Auth ----------
+// ---------- Helpers ----------
 function authMiddleware(required = null) {
   return (req, res, next) => {
     const hdr = req.headers.authorization || '';
     const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : null;
-    if (!token || !sessions.has(token)) return res.status(401).json({ error: 'Unauthorized' });
+    if (!token || !sessions.has(token)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     const s = sessions.get(token);
     req.user = s;
-    if (required && s.role !== required) return res.status(403).json({ error: 'Forbidden' });
+    if (required && s.role !== required) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     next();
-  };
+  }
 }
 
 async function buildToken({ identity, roomName, canPublish = false, canSubscribe = true, metadata = '{}' }) {
@@ -176,7 +107,7 @@ async function buildToken({ identity, roomName, canPublish = false, canSubscribe
   return await at.toJwt();
 }
 
-// ---------- API ----------
+// ---------- Routes ----------
 app.get('/api/config', (_, res) => {
   res.json({ LIVEKIT_URL });
 });
@@ -193,7 +124,8 @@ app.post('/api/login', (req, res) => {
 });
 
 app.post('/api/logout', authMiddleware(), (req, res) => {
-  sessions.delete(req.user.token);
+  const token = req.user.token;
+  sessions.delete(token);
   res.json({ ok: true });
 });
 
@@ -204,10 +136,8 @@ app.post('/api/token', authMiddleware(), async (req, res) => {
   }
   try {
     const jwt = await buildToken({
-      identity,
-      roomName,
-      canPublish: !!publish,
-      canSubscribe: !!subscribe,
+      identity, roomName,
+      canPublish: !!publish, canSubscribe: !!subscribe,
       metadata: JSON.stringify({ by: req.user.username, role: req.user.role })
     });
     res.json({ token: jwt, url: LIVEKIT_URL });
@@ -217,14 +147,15 @@ app.post('/api/token', authMiddleware(), async (req, res) => {
   }
 });
 
+// Admin creates a watch session
 app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
   const { selection } = req.body || {};
   if (!Array.isArray(selection) || selection.length === 0 || selection.length > 6) {
     return res.status(400).json({ error: 'selection must be 1..6 entries' });
   }
   const id = uuidv4();
-  const roomName = `watch-${id.slice(0, 8)}`;
-  watchSessions = (watchSessions || []).map((w) => ({ ...w, active: false }));
+  const roomName = `watch-${id.slice(0,8)}`;
+  watchSessions = (watchSessions || []).map(w => ({ ...w, active: false }));
   const record = { id, roomName, selection, createdAt: Date.now(), active: true };
   watchSessions.push(record);
   saveWatchSessions(watchSessions);
@@ -234,7 +165,7 @@ app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
 app.put('/api/watch/:id', authMiddleware('admin'), (req, res) => {
   const { id } = req.params;
   const { selection, active } = req.body || {};
-  const idx = (watchSessions || []).findIndex((w) => w.id === id);
+  const idx = (watchSessions || []).findIndex(w => w.id === id);
   if (idx === -1) return res.status(404).json({ error: 'not_found' });
   if (selection) watchSessions[idx].selection = selection;
   if (typeof active === 'boolean') watchSessions[idx].active = active;
@@ -244,7 +175,7 @@ app.put('/api/watch/:id', authMiddleware('admin'), (req, res) => {
 
 app.post('/api/watch/:id/stop', authMiddleware('admin'), (req, res) => {
   const { id } = req.params;
-  const idx = (watchSessions || []).findIndex((w) => w.id === id);
+  const idx = (watchSessions || []).findIndex(w => w.id === id);
   if (idx === -1) return res.status(404).json({ error: 'not_found' });
   watchSessions[idx].active = false;
   saveWatchSessions(watchSessions);
@@ -252,25 +183,25 @@ app.post('/api/watch/:id/stop', authMiddleware('admin'), (req, res) => {
 });
 
 app.get('/api/watch/active', authMiddleware(), (req, res) => {
-  const active = [...(watchSessions || [])].reverse().find((w) => w.active);
+  const active = [...(watchSessions || [])].reverse().find(w => w.active);
   res.json(active || null);
 });
-app.get('/api/watch', authMiddleware('admin'), (req, res) => { res.json(watchSessions || []); });
+app.get('/api/watch', authMiddleware('admin'), (req, res) => {
+  res.json(watchSessions || []);
+});
 app.get('/api/watch/:id', authMiddleware(), (req, res) => {
-  const item = (watchSessions || []).find((w) => w.id === req.params.id);
+  const item = (watchSessions || []).find(w => w.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'not_found' });
   res.json(item);
 });
 
-// ---------- Root ----------
 app.get('/', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ---------- Start ----------
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  if (LIVEKIT_URL.includes('wss://multicam-national-day-htyhphzo.livekit.cloud')) {
+  if (LIVEKIT_URL.includes('REPLACE_ME')) {
     console.log('⚠️  Please set LIVEKIT_URL in .env');
   }
 });

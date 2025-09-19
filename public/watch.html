@@ -22,8 +22,11 @@
       </div>
     </div>
 
-    <!-- LiveKit من CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@livekit/client/dist/livekit-client.umd.min.js"></script>
+    <!-- LiveKit CDN + fallback -->
+    <script id="lk-cdn"
+      src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"
+      onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/@livekit/client@2.3.0/dist/livekit-client.umd.min.js';document.head.appendChild(s);}())">
+    </script>
 
     <!-- سكربتات المشروع -->
     <script src="/common.js"></script>

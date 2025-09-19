@@ -1,3 +1,28 @@
-<!doctype html><html><body>watch<script defer src="/vendor/livekit-client.umd.min.js"
-  onerror="(function(){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js';s.defer=true;s.onerror=function(){var b=document.createElement('script');b.src='https://unpkg.com/livekit-client@latest/dist/livekit-client.umd.js';b.defer=true;document.head.appendChild(b)};document.head.appendChild(s);}())">
-</script><script defer src='/common.js?v=12'></script><script defer src='/watch.js?v=12'></script></body></html>
+const { Room, RoomEvent } = window.livekit;
+let lkRoom = null;
+
+function ensureAuthWatch() {
+  const s = requireAuth();
+  if (!s) location.href = '/';
+  return s;
+}
+async function start() {
+  ensureAuthWatch();
+  logoutBtnHandler(document.getElementById('logoutBtn'));
+  const id = qs('id');
+  const rec = await API.getWatch(id);
+  const tk = await API.token(rec.roomName, `viewer-${API.session().username}`, false, true);
+  lkRoom = new Room({ adaptiveStream: true });
+  await lkRoom.connect(tk.url, tk.token);
+  const player = document.getElementById('player');
+  lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
+    if (track.kind === 'video') track.attach(player);
+    if (track.kind === 'audio') track.attach(player);
+  });
+  document.getElementById('fsBtn').addEventListener('click', async () => {
+    const elem = player;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (elem.requestFullscreen) elem.requestFullscreen();
+  });
+}
+start();

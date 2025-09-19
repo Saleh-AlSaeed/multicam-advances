@@ -29,7 +29,6 @@
 
     <canvas id="mixerCanvas" class="hidden" width="1920" height="1080"></canvas>
 
-    <!-- نافذة اختيار التوليف (المكس) -->
     <div id="viewModal" class="modal">
       <div class="box">
         <h3>طريقة المشاهدة</h3>
@@ -54,13 +53,12 @@
       </div>
     </div>
 
-    <!-- LiveKit: محلي + محمل بديل من CDN -->
-    <script defer src="https://cdn.jsdelivr.net/npm/livekit-client@2.3.0/dist/livekit-client.umd.min.js"></script>
-    <script defer src="/livekit-loader.js"></script>
+    <!-- LiveKit من CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@livekit/client/dist/livekit-client.umd.min.js"></script>
 
     <!-- سكربتات المشروع -->
-    <script defer src="/common.js"></script>
-    <script defer src="/logout-fix.js"></script>
-    <script defer src="/admin.js"></script>
+    <script src="/common.js"></script>
+    <script src="/logout-fix.js"></script>
+    <script src="/admin.js"></script>
   </body>
 </html>

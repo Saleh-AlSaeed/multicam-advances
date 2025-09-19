@@ -17,9 +17,9 @@ app.use(morgan('dev'));
 app.use(cors());
 
 // --------- ENV ---------
-const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://REPLACE_ME.livekit.cloud';
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
+const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
 const PORT = Number(process.env.PORT) || 8080;
 
 // --------- STATIC ---------
@@ -40,7 +40,7 @@ const USERS = {
   'مدينة رقم3': { password: 'City3', role: 'city', room: 'city-3' },
   'مدينة رقم4': { password: 'City4', role: 'city', room: 'city-4' },
   'مدينة رقم5': { password: 'City5', role: 'city', room: 'city-5' },
-  'مدينة رقم6': { password: 'City6', role: 'city', room: 'city-6' }, // أصلحتها City6
+  'مدينة رقم6': { password: 'City6', role: 'city', room: 'city-6' }, 
   'مشاهد1': { password: 'Watch1', role: 'watcher' },
   'مشاهد2': { password: 'Watch2', role: 'watcher' },
   'مشاهد3': { password: 'Watch3', role: 'watcher' },

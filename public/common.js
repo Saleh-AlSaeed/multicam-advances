@@ -1,4 +1,4 @@
-// ==== API helpers ====
+// ===== API =====
 const API = {
   async getConfig() {
     const r = await fetch('/api/config');
@@ -27,10 +27,9 @@ const API = {
     try {
       await fetch('/api/logout', {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + s.token }
+        headers: { 'Authorization': 'Bearer ' + (s?.token || '') }
       });
-    } catch {}
-    localStorage.removeItem('session');
+    } catch (_) {}
   },
   async token(roomName, identity, publish=false, subscribe=true) {
     const s = API.session();
@@ -75,7 +74,7 @@ const API = {
   }
 };
 
-// ==== Navigation ====
+// ===== Routing =====
 function goTo(role, room) {
   if (role === 'admin') location.href = '/admin.html';
   else if (role === 'city') location.href = `/city.html?room=${encodeURIComponent(room)}`;
@@ -88,22 +87,22 @@ function requireAuth() {
   return s;
 }
 
-// زر الخروج — يعمل في كل الصفحات
+// ===== Logout button (robust) =====
 function logoutBtnHandler(btn) {
   if (!btn) return;
-  const handler = async (ev) => {
+  const onClick = async (ev) => {
     ev.preventDefault();
-    btn.disabled = true;
-    try { await API.logout(); }
-    finally { location.href = '/'; }
+    try { await API.logout(); } catch (_) {}
+    try { localStorage.removeItem('session'); } catch (_) {}
+    // استخدم replace حتى لا تعود الصفحة السابقة من الكاش
+    location.replace('/');
   };
-  // أزل أي مستمع قديم ثم أضف الجديد
-  btn.replaceWith(btn.cloneNode(true));
-  const newBtn = document.getElementById(btn.id) || document.querySelector('.btn.danger#logoutBtn') || document.querySelector('#logoutBtn');
-  (newBtn || btn).addEventListener('click', handler);
+  // إزالة مستمعين قدامى إن وجدوا ثم إضافة الحالي
+  btn.removeEventListener('click', onClick);
+  btn.addEventListener('click', onClick, { passive: false });
 }
 
-// أدوات مساعدة
+// ===== Helpers =====
 function qs(k, def='') {
   const u = new URL(location.href);
   return u.searchParams.get(k) ?? def;

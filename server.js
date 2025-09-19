@@ -26,94 +26,96 @@ const PORT = process.env.PORT || 8080;
 // ---------- STATIC ----------
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ---------- LiveKit UMD fetch & cache ----------
+// ---------- LiveKit UMD: local fallback provider ----------
 const VENDOR_DIR = path.join(__dirname, 'public', 'vendor');
 if (!fs.existsSync(VENDOR_DIR)) fs.mkdirSync(VENDOR_DIR, { recursive: true });
-
 const LK_UMD_FILE = path.join(VENDOR_DIR, 'livekit-client.umd.min.js');
-// جرّب عدة مصادر
+
+// مصادر موثوقة (يرجى إبقاء jsDelivr أولاً)
 const LK_UMD_URLS = [
-  'https://unpkg.com/@livekit/client@2.3.0/dist/livekit-client.umd.min.js',
   'https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js',
+  'https://unpkg.com/@livekit/client@2.3.0/dist/livekit-client.umd.min.js',
   'https://raw.githubusercontent.com/livekit/client-sdk-js/v2.3.0/dist/livekit-client.umd.min.js'
 ];
 
-// تنزيل مع متابعة التحويلات و UA صريح
-function downloadWithRedirects(url, destPath, maxRedirects = 5) {
+function downloadWithRedirects(url, destPath, { maxRedirects = 8, timeoutMs = 20000 } = {}) {
   return new Promise((resolve, reject) => {
     const visited = [];
-    function doGet(currentUrl, redirectsLeft) {
+
+    function getOne(currentUrl, redirectsLeft) {
       visited.push(currentUrl);
-      const req = https.get(currentUrl, {
-        headers: { 'User-Agent': 'node-fetch-render/1.0' }
-      }, (res) => {
-        const code = res.statusCode || 0;
-        // التحويلات الشائعة
-        if ([301, 302, 303, 307, 308].includes(code)) {
-          const loc = res.headers.location;
-          if (!loc) return reject(new Error(`Redirect (${code}) without Location`));
+      const req = https.get(currentUrl, { headers: { 'User-Agent': 'node/https livekit-fallback/1.0' } }, (res) => {
+        const { statusCode, headers } = res;
+        if ([301, 302, 303, 307, 308].includes(statusCode)) {
+          const loc = headers.location;
+          if (!loc) return reject(new Error(`Redirect ${statusCode} without Location`));
           if (redirectsLeft <= 0) return reject(new Error(`Too many redirects: ${visited.join(' -> ')}`));
-          res.resume(); // تخلص من البودي
-          const next = new URL(loc, currentUrl).toString();
-          return doGet(next, redirectsLeft - 1);
-        }
-        if (code !== 200) {
           res.resume();
-          return reject(new Error(`HTTP ${code} for ${currentUrl}`));
+          const nextUrl = new URL(loc, currentUrl).toString();
+          return getOne(nextUrl, redirectsLeft - 1);
         }
-        const tmpPath = destPath + '.part';
-        const out = fs.createWriteStream(tmpPath);
+        if (statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`HTTP ${statusCode} for ${currentUrl}`));
+        }
+        const tmp = destPath + '.part';
+        const out = fs.createWriteStream(tmp);
         res.pipe(out);
         out.on('finish', () => {
           out.close(() => {
             try {
               if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-              fs.renameSync(tmpPath, destPath);
+              fs.renameSync(tmp, destPath);
               resolve();
             } catch (e) { reject(e); }
           });
         });
         out.on('error', (e) => {
-          try { fs.unlinkSync(tmpPath); } catch {}
+          try { fs.unlinkSync(tmp); } catch {}
           reject(e);
         });
       });
+      req.setTimeout(timeoutMs, () => { req.destroy(new Error('Request timeout')); });
       req.on('error', reject);
     }
-    doGet(url, maxRedirects);
+
+    getOne(url, maxRedirects);
   });
 }
 
-app.get('/vendor/livekit-client.umd.min.js', async (req, res) => {
+async function ensureLocalLiveKit() {
   try {
-    const needFetch = !fs.existsSync(LK_UMD_FILE) || fs.statSync(LK_UMD_FILE).size < 10_000;
-    if (needFetch) {
-      let lastErr = null;
-      for (const url of LK_UMD_URLS) {
-        try {
-          console.log('[LiveKit UMD] fetching from:', url);
-          await downloadWithRedirects(url, LK_UMD_FILE, 8);
-          console.log('[LiveKit UMD] saved to:', LK_UMD_FILE);
-          break;
-        } catch (e) {
-          lastErr = e;
-          console.warn('[LiveKit UMD] source failed:', url, String(e));
-        }
-      }
-      if (!fs.existsSync(LK_UMD_FILE) || fs.statSync(LK_UMD_FILE).size < 10_000) {
-        return res
-          .status(503)
-          .type('text/plain; charset=utf-8')
-          .send('Failed to fetch LiveKit UMD: ' + (lastErr?.message || 'unknown'));
-      }
+    if (fs.existsSync(LK_UMD_FILE) && fs.statSync(LK_UMD_FILE).size > 10_000) return true;
+  } catch (_) {}
+
+  let lastErr = null;
+  for (const url of LK_UMD_URLS) {
+    try {
+      console.log('[LK UMD] fetching:', url);
+      await downloadWithRedirects(url, LK_UMD_FILE);
+      console.log('[LK UMD] saved:', LK_UMD_FILE);
+      return true;
+    } catch (e) {
+      lastErr = e;
+      console.warn('[LK UMD] failed from', url, String(e));
     }
-    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    fs.createReadStream(LK_UMD_FILE).pipe(res);
-  } catch (e) {
-    console.error('[LiveKit UMD] serve error', e);
-    res.status(500).type('text/plain; charset=utf-8').send('Error serving LiveKit UMD');
   }
+  console.error('[LK UMD] all sources failed', lastErr?.message || '');
+  return false;
+}
+
+// يخدم النسخة المحلية عند الطلب
+app.get('/vendor/livekit-client.umd.min.js', async (req, res) => {
+  const ok = await ensureLocalLiveKit();
+  if (!ok) {
+    return res
+      .status(503)
+      .type('text/plain; charset=utf-8')
+      .send('Failed to fetch LiveKit UMD fallback.');
+  }
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  fs.createReadStream(LK_UMD_FILE).pipe(res);
 });
 
 // ---------- App state ----------
@@ -140,7 +142,7 @@ const WATCH_FILE = path.join(DATA_DIR, 'watchSessions.json');
 
 function loadWatchSessions() {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
     return JSON.parse(fs.readFileSync(WATCH_FILE, 'utf-8'));
   } catch (e) {
@@ -154,7 +156,7 @@ function saveWatchSessions(list) {
 }
 let watchSessions = loadWatchSessions();
 
-// ---------- Auth helpers ----------
+// ---------- Auth ----------
 function authMiddleware(required = null) {
   return (req, res, next) => {
     const hdr = req.headers.authorization || '';
@@ -174,8 +176,10 @@ async function buildToken({ identity, roomName, canPublish = false, canSubscribe
   return await at.toJwt();
 }
 
-// ---------- Routes ----------
-app.get('/api/config', (_, res) => { res.json({ LIVEKIT_URL }); });
+// ---------- API ----------
+app.get('/api/config', (_, res) => {
+  res.json({ LIVEKIT_URL });
+});
 
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
@@ -195,11 +199,15 @@ app.post('/api/logout', authMiddleware(), (req, res) => {
 
 app.post('/api/token', authMiddleware(), async (req, res) => {
   const { roomName, publish = false, subscribe = true, identity } = req.body || {};
-  if (!roomName || !identity) return res.status(400).json({ error: 'roomName and identity are required' });
+  if (!roomName || !identity) {
+    return res.status(400).json({ error: 'roomName and identity are required' });
+  }
   try {
     const jwt = await buildToken({
-      identity, roomName,
-      canPublish: !!publish, canSubscribe: !!subscribe,
+      identity,
+      roomName,
+      canPublish: !!publish,
+      canSubscribe: !!subscribe,
       metadata: JSON.stringify({ by: req.user.username, role: req.user.role })
     });
     res.json({ token: jwt, url: LIVEKIT_URL });
@@ -215,8 +223,8 @@ app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
     return res.status(400).json({ error: 'selection must be 1..6 entries' });
   }
   const id = uuidv4();
-  const roomName = `watch-${id.slice(0,8)}`;
-  watchSessions = (watchSessions || []).map(w => ({ ...w, active: false }));
+  const roomName = `watch-${id.slice(0, 8)}`;
+  watchSessions = (watchSessions || []).map((w) => ({ ...w, active: false }));
   const record = { id, roomName, selection, createdAt: Date.now(), active: true };
   watchSessions.push(record);
   saveWatchSessions(watchSessions);
@@ -226,7 +234,7 @@ app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
 app.put('/api/watch/:id', authMiddleware('admin'), (req, res) => {
   const { id } = req.params;
   const { selection, active } = req.body || {};
-  const idx = (watchSessions || []).findIndex(w => w.id === id);
+  const idx = (watchSessions || []).findIndex((w) => w.id === id);
   if (idx === -1) return res.status(404).json({ error: 'not_found' });
   if (selection) watchSessions[idx].selection = selection;
   if (typeof active === 'boolean') watchSessions[idx].active = active;
@@ -236,7 +244,7 @@ app.put('/api/watch/:id', authMiddleware('admin'), (req, res) => {
 
 app.post('/api/watch/:id/stop', authMiddleware('admin'), (req, res) => {
   const { id } = req.params;
-  const idx = (watchSessions || []).findIndex(w => w.id === id);
+  const idx = (watchSessions || []).findIndex((w) => w.id === id);
   if (idx === -1) return res.status(404).json({ error: 'not_found' });
   watchSessions[idx].active = false;
   saveWatchSessions(watchSessions);
@@ -244,21 +252,25 @@ app.post('/api/watch/:id/stop', authMiddleware('admin'), (req, res) => {
 });
 
 app.get('/api/watch/active', authMiddleware(), (req, res) => {
-  const active = [...(watchSessions || [])].reverse().find(w => w.active);
+  const active = [...(watchSessions || [])].reverse().find((w) => w.active);
   res.json(active || null);
 });
 app.get('/api/watch', authMiddleware('admin'), (req, res) => { res.json(watchSessions || []); });
 app.get('/api/watch/:id', authMiddleware(), (req, res) => {
-  const item = (watchSessions || []).find(w => w.id === req.params.id);
+  const item = (watchSessions || []).find((w) => w.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'not_found' });
   res.json(item);
 });
 
+// ---------- Root ----------
 app.get('/', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// ---------- Start ----------
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  if (LIVEKIT_URL.includes('REPLACE_ME')) console.log('⚠️  Please set LIVEKIT_URL in .env');
+  if (LIVEKIT_URL.includes('REPLACE_ME')) {
+    console.log('⚠️  Please set LIVEKIT_URL in .env');
+  }
 });

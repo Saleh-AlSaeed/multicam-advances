@@ -16,7 +16,6 @@
     <div class="container">
       <div class="card">
         <h3>تجهيز الاتصال</h3>
-        <div id="status" class="small">الأجهزة: <span id="devReady">جاري الفحص…</span></div>
         <div class="grid cols-2">
           <div>
             <label>الكاميرا:</label>
@@ -28,9 +27,11 @@
           </div>
         </div>
         <div class="toolbar">
+          <button id="grantBtn" class="btn">منح إذن الكاميرا/المايك</button>
           <button id="joinBtn" class="btn">اتصال</button>
           <button id="leaveBtn" class="btn secondary" disabled>مغادرة</button>
         </div>
+        <div class="small">الحالة: <span id="status">جاهز</span></div>
         <hr/>
         <div class="video-grid cols-1">
           <div class="video-tile"><video id="preview" autoplay playsinline muted></video><div class="label">المعاينة</div></div>

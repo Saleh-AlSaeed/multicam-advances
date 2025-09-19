@@ -56,5 +56,12 @@
     </script>
     <script defer src="/common.js"></script>
     <script defer src="/admin.js"></script>
+    <!-- حاول المحلي أولا -->
+<script defer src="/vendor/livekit-client.umd.min.js"></script>
+<!-- لو فشل المحلي، هذا الملف يضمن التحميل من CDN -->
+<script defer src="/livekit-loader.js"></script>
+
+<script defer src="/common.js"></script>
+<script defer src="/admin.js"></script>
   </body>
 </html>

@@ -1,32 +1,29 @@
 <!doctype html>
 <html lang="ar" class="rtl">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>تشخيص الكاميرا/المايك</title>
-  <link rel="stylesheet" href="/styles.css" />
-  <style>
-    .log {white-space: pre-wrap; background:#0b1020; color:#bfe1ff; padding:12px; border-radius:12px; font:12px ui-monospace,monospace; max-height:40vh; overflow:auto;}
-    video {width:100%; max-width:480px; background:#000; border-radius:12px}
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="card">
-      <h2>تشخيص الكاميرا/المايك</h2>
-      <div class="toolbar">
-        <button id="ask" class="btn">طلب الإذن الآن</button>
-        <button id="list" class="btn secondary">عرض الأجهزة</button>
-        <button id="front" class="btn">تشغيل الأمامية</button>
-        <button id="back" class="btn">تشغيل الخلفية</button>
-        <button id="stop" class="btn danger">إيقاف</button>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>تشخيص الكاميرا/المايك</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>.log{white-space:pre-wrap;background:#0b1020;color:#bfe1ff;padding:12px;border-radius:12px;font:12px ui-monospace,monospace;max-height:40vh;overflow:auto}video{width:100%;max-width:480px;background:#000;border-radius:12px}</style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <h2>تشخيص الكاميرا/المايك</h2>
+        <div class="toolbar">
+          <button id="ask" class="btn">طلب الإذن الآن</button>
+          <button id="list" class="btn secondary">عرض الأجهزة</button>
+          <button id="front" class="btn">تشغيل الأمامية</button>
+          <button id="back" class="btn">تشغيل الخلفية</button>
+          <button id="stop" class="btn danger">إيقاف</button>
+        </div>
+        <hr/>
+        <video id="vid" autoplay playsinline muted></video>
+        <hr/>
+        <div id="out" class="log"></div>
       </div>
-      <hr/>
-      <video id="vid" autoplay playsinline muted></video>
-      <hr/>
-      <div id="out" class="log"></div>
     </div>
-  </div>
-  <script src="/media-test.js?v=1"></script>
-</body>
+    <script src="/media-test.js?v=1"></script>
+  </body>
 </html>

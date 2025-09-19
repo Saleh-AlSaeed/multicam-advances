@@ -1,4 +1,4 @@
-// Admin page with robust LiveKit loading
+// ===== لوحة المشرف =====
 
 const CITIES = [
   { label: 'مدينة رقم1', room: 'city-1' },
@@ -15,27 +15,27 @@ let composer = null;
 let composite = null;
 let currentSelection = [];
 
-// انتظر حتى يتحمل livekit من CDN
-async function ensureLivekit(timeoutMs = 10000) {
+// انتظار مكتبة LiveKit
+async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
-  const start = Date.now();
-  return await new Promise((resolve, reject) => {
-    const i = setInterval(() => {
-      if (window.livekit) { clearInterval(i); resolve(window.livekit); }
-      else if (Date.now() - start > timeoutMs) { clearInterval(i); reject(new Error('LiveKit client did not load')); }
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const t = setInterval(() => {
+      if (window.livekit) { clearInterval(t); resolve(window.livekit); }
+      else if (Date.now() - started > timeoutMs) { clearInterval(t); reject(new Error('LiveKit client did not load')); }
     }, 50);
   });
 }
 
 function ensureAuth() {
   const s = requireAuth();
-  if (!s || s.role !== 'admin') { location.href = '/'; }
+  if (!s || s.role !== 'admin') location.href = '/';
   return s;
 }
 
 async function connectCityPreviews() {
   ensureAuth();
-  const lk = await ensureLivekit(); // ← انتظر LiveKit
+  const lk = await ensureLivekit();
   const { Room, RoomEvent } = lk;
 
   const cfg = await API.getConfig();
@@ -92,7 +92,7 @@ function renderSlots() {
   const n = parseInt(document.getElementById('camCount').value, 10);
   const slots = document.getElementById('slots');
   slots.innerHTML = '';
-  for (let i=0;i<n;i++) {
+  for (let i = 0; i < n; i++) {
     const field = document.createElement('fieldset');
     field.innerHTML = `
       <legend>كاميرا رقم ${i+1}</legend>
@@ -124,12 +124,13 @@ function readSelectionFromUI() {
 }
 
 function layoutRects(n, W, H) {
-  const rects=[]; if(n===1)rects.push({x:0,y:0,w:W,h:H});
-  else if(n===2){const w=W/2,h=H;rects.push({x:0,y:0,w,h},{x:w,y:0,w,h});}
-  else if(n===3){const w=W/3,h=H;for(let i=0;i<3;i++)rects.push({x:i*w,y:0,w,h});}
-  else if(n===4){const w=W/2,h=H/2;rects.push({x:0,y:0,w,h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h});}
-  else if(n===5){const w=W/3,h=H/2;let i=0;for(let r=0;r<2;r++)for(let c=0;c<3;c++){if(i<5)rects.push({x:c*w,y:r*h,w,h});i++;}}
-  else if(n===6){const w=W/3,h=H/2;for(let r=0;r<2;r++)for(let c=0;c<3;c++)rects.push({x:c*w,y:r*h,w,h});}
+  const rects = [];
+  if (n === 1) rects.push({ x: 0, y: 0, w: W, h: H });
+  else if (n === 2) { const w=W/2,h=H; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h}); }
+  else if (n === 3) { const w=W/3,h=H; for (let i=0;i<3;i++) rects.push({x:i*w,y:0,w,h}); }
+  else if (n === 4) { const w=W/2,h=H/2; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h}); }
+  else if (n === 5) { const w=W/3,h=H/2; let i=0; for (let r=0;r<2;r++) for (let c=0;c<3;c++){ if(i<5) rects.push({x:c*w,y:r*h,w,h}); i++; } }
+  else if (n === 6) { const w=W/3,h=H/2; for (let r=0;r<2;r++) for (let c=0;c<3;c++) rects.push({x:c*w,y:r*h,w,h}); }
   return rects;
 }
 
@@ -191,7 +192,7 @@ async function startComposer(rec) {
     room,
     stop: async () => {
       try { cancelAnimationFrame(rafId); } catch(_){}
-      try { [...room.localParticipant.tracks.values()].forEach(pub => { try{pub.unpublish();}catch(_){}}); } catch(_){}
+      try { [...room.localParticipant.tracks.values()].forEach(pub=>{ try{pub.unpublish();}catch(_){}}); } catch(_){}
       try { room.disconnect(); } catch(_){}
     }
   };

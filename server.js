@@ -9,66 +9,58 @@ import { fileURLToPath } from 'url';
 import { AccessToken } from 'livekit-server-sdk';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
 app.use(morgan('dev'));
 app.use(cors());
 
-// --------- ENV ---------
-const LIVEKIT_URL       = process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
-const LIVEKIT_API_KEY   = process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
-const LIVEKIT_API_SECRET= process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
-const PORT              = Number(process.env.PORT) || 8080;
+// ---------- ENV ----------
+const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
+const PORT = process.env.PORT || 8080;
 
-// --------- STATIC PATHS (تتعامل مع بنية src/ أو الجذر) ---------
-const PUBLIC_DIR = fs.existsSync(path.join(__dirname, 'public'))
-  ? path.join(__dirname, 'public')
-  : path.join(__dirname, '..', 'public');
+// ---------- STATIC ----------
+// نخدم ملفات المشروع العامة
+app.use(express.static(path.join(__dirname, 'public')));
 
-const NODE_MODULES_DIR = fs.existsSync(path.join(__dirname, 'node_modules'))
-  ? path.join(__dirname, 'node_modules')
-  : path.join(__dirname, '..', 'node_modules');
+// نخدم vendor مع إجبار نوع MIME لملفات JS (احترازيًا)
+app.use('/vendor', express.static(path.join(__dirname, 'public', 'vendor'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js')) {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    }
+  }
+}));
 
-// --------- STATIC ---------
-app.use(express.static(PUBLIC_DIR));
-app.use(
-  '/vendor',
-  express.static(
-    path.join(NODE_MODULES_DIR, 'livekit-client', 'dist'),
-    { immutable: true, maxAge: '1y' }
-  )
-);
-
-// --------- USERS & SESSIONS ---------
+// ---------- In-memory stores ----------
 const USERS = {
-  admin: { password: 'admin123', role: 'admin' },
-  'مدينة رقم1': { password: 'City1', role: 'city', room: 'city-1' },
-  'مدينة رقم2': { password: 'City2', role: 'city', room: 'city-2' },
-  'مدينة رقم3': { password: 'City3', role: 'city', room: 'city-3' },
-  'مدينة رقم4': { password: 'City4', role: 'city', room: 'city-4' },
-  'مدينة رقم5': { password: 'City5', role: 'city', room: 'city-5' },
-  'مدينة رقم6': { password: 'City6', role: 'city', room: 'city-6' }, // تأكدنا أنها City6
-  'مشاهد1': { password: 'Watch1', role: 'watcher' },
-  'مشاهد2': { password: 'Watch2', role: 'watcher' },
-  'مشاهد3': { password: 'Watch3', role: 'watcher' },
-  'مشاهد4': { password: 'Watch4', role: 'watcher' },
-  'مشاهد5': { password: 'Watch5', role: 'watcher' },
-  'مشاهد6': { password: 'Watch6', role: 'watcher' },
+  "admin": { password: "admin123", role: "admin" },
+  "مدينة رقم1": { password: "City1", role: "city", room: "city-1" },
+  "مدينة رقم2": { password: "City2", role: "city", room: "city-2" },
+  "مدينة رقم3": { password: "City3", role: "city", room: "city-3" },
+  "مدينة رقم4": { password: "City4", role: "city", room: "city-4" },
+  "مدينة رقم5": { password: "City5", role: "city", room: "city-5" },
+  "مدينة رقم6": { password: "City5", role: "city", room: "city-6" },
+  "مشاهد1": { password: "Watch1", role: "watcher" },
+  "مشاهد2": { password: "Watch2", role: "watcher" },
+  "مشاهد3": { password: "Watch3", role: "watcher" },
+  "مشاهد4": { password: "Watch4", role: "watcher" },
+  "مشاهد5": { password: "Watch5", role: "watcher" },
+  "مشاهد6": { password: "Watch6", role: "watcher" }
 };
 
-const sessions = new Map(); // token -> { token, username, role, room, createdAt }
+const sessions = new Map(); // token -> { username, role, room, createdAt }
 
-// --------- WATCH SESSIONS PERSISTENCE ---------
-const DATA_DIR   = fs.existsSync(path.join(__dirname, 'data'))
-  ? path.join(__dirname, 'data')
-  : path.join(__dirname, '..', 'data');
+// ---------- Persistence for watch sessions ----------
+const DATA_DIR = path.join(__dirname, 'data');
 const WATCH_FILE = path.join(DATA_DIR, 'watchSessions.json');
 
 function loadWatchSessions() {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
     if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
     const txt = fs.readFileSync(WATCH_FILE, 'utf-8');
     return JSON.parse(txt);
@@ -79,7 +71,6 @@ function loadWatchSessions() {
 }
 function saveWatchSessions(list) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf-8');
   } catch (e) {
     console.error('Failed to save watch sessions:', e);
@@ -87,10 +78,10 @@ function saveWatchSessions(list) {
 }
 let watchSessions = loadWatchSessions(); // [{ id, roomName, selection, createdAt, active }]
 
-// --------- HELPERS ---------
+// ---------- Helpers ----------
 function authMiddleware(required = null) {
   return (req, res, next) => {
-    const hdr   = req.headers.authorization || '';
+    const hdr = req.headers.authorization || '';
     const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : null;
     if (!token || !sessions.has(token)) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -107,25 +98,24 @@ function authMiddleware(required = null) {
 async function buildToken({ identity, roomName, canPublish = false, canSubscribe = true, metadata = '{}' }) {
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity,
-    metadata,
+    metadata
   });
   at.addGrant({
     roomJoin: true,
     room: roomName,
     canPublish,
     canSubscribe,
-    canPublishData: true,
+    canPublishData: true
   });
-  at.ttl = 60 * 60 * 4; // 4 ساعات
+  at.ttl = 60 * 60 * 4; // 4h
   return await at.toJwt();
 }
 
-// --------- ROUTES ---------
+// ---------- Routes ----------
 app.get('/api/config', (_, res) => {
   res.json({ LIVEKIT_URL });
 });
 
-// تسجيل الدخول
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password || !USERS[username] || USERS[username].password !== password) {
@@ -137,13 +127,13 @@ app.post('/api/login', (req, res) => {
   res.json({ token, username, role, room });
 });
 
-// الخروج
 app.post('/api/logout', authMiddleware(), (req, res) => {
-  sessions.delete(req.user.token);
+  const token = req.user.token;
+  sessions.delete(token);
   res.json({ ok: true });
 });
 
-// إنشاء توكن LiveKit
+// Create LiveKit token
 app.post('/api/token', authMiddleware(), async (req, res) => {
   const { roomName, publish = false, subscribe = true, identity } = req.body || {};
   if (!roomName || !identity) {
@@ -155,7 +145,7 @@ app.post('/api/token', authMiddleware(), async (req, res) => {
       roomName,
       canPublish: !!publish,
       canSubscribe: !!subscribe,
-      metadata: JSON.stringify({ by: req.user.username, role: req.user.role }),
+      metadata: JSON.stringify({ by: req.user.username, role: req.user.role })
     });
     res.json({ token: jwt, url: LIVEKIT_URL });
   } catch (e) {
@@ -164,16 +154,14 @@ app.post('/api/token', authMiddleware(), async (req, res) => {
   }
 });
 
-// إنشاء جلسة مشاهدة (Admin فقط)
+// Admin creates a watch session
 app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
   const { selection } = req.body || {};
   if (!Array.isArray(selection) || selection.length === 0 || selection.length > 6) {
     return res.status(400).json({ error: 'selection must be 1..6 entries' });
   }
-  const id       = uuidv4();
-  const roomName = `watch-${id.slice(0, 8)}`;
-
-  // تعطيل أي جلسة سابقة
+  const id = uuidv4();
+  const roomName = `watch-${id.slice(0,8)}`;
   watchSessions = (watchSessions || []).map(w => ({ ...w, active: false }));
   const record = { id, roomName, selection, createdAt: Date.now(), active: true };
   watchSessions.push(record);
@@ -181,7 +169,6 @@ app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
   res.json(record);
 });
 
-// تعديل/إيقاف جلسة مشاهدة
 app.put('/api/watch/:id', authMiddleware('admin'), (req, res) => {
   const { id } = req.params;
   const { selection, active } = req.body || {};
@@ -202,12 +189,11 @@ app.post('/api/watch/:id/stop', authMiddleware('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
-// قراءة الجلسات
-app.get('/api/watch/active', authMiddleware(), (_, res) => {
+app.get('/api/watch/active', authMiddleware(), (req, res) => {
   const active = [...(watchSessions || [])].reverse().find(w => w.active);
   res.json(active || null);
 });
-app.get('/api/watch', authMiddleware('admin'), (_, res) => {
+app.get('/api/watch', authMiddleware('admin'), (req, res) => {
   res.json(watchSessions || []);
 });
 app.get('/api/watch/:id', authMiddleware(), (req, res) => {
@@ -216,15 +202,14 @@ app.get('/api/watch/:id', authMiddleware(), (req, res) => {
   res.json(item);
 });
 
-// Root + health
+// Root
 app.get('/', (_, res) => {
-  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-app.get('/health', (_, res) => res.status(200).send('ok'));
 
 app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
   if (LIVEKIT_URL.includes('REPLACE_ME')) {
-    console.log('⚠️  Please set LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET');
+    console.log('⚠️  Please set LIVEKIT_URL in .env');
   }
 });

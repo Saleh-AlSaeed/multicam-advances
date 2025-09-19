@@ -18,10 +18,10 @@ npm run dev
 
 ## الدخول
 - admin / admin123
-- مدينة رقم 1 / City1 → city-1
+- مدينة رقم1 / City1 → city-1
 - ...
-- مدينة رقم 6 / City5 → city-6
-- مشاهد 1..6 / Watch1..Watch6
+- مدينة رقم6 / City6 → city-6
+- مشاهد1..6 / Watch1..Watch6
 
 ## النشر
 يفضّل GitHub + Koyeb/Render (واجهات + API في نفس السيرفر). يمكن أيضًا Cloudflare Pages + Functions مع تكييف إصدار التوكن.

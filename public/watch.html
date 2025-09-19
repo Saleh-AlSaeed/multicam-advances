@@ -14,6 +14,7 @@
         <button id="logoutBtn" class="btn danger">خروج</button>
       </div>
     </header>
+
     <div class="video-grid cols-1">
       <div class="video-tile">
         <video id="player" autoplay playsinline controls></video>
@@ -21,13 +22,12 @@
       </div>
     </div>
 
-    <!-- LiveKit: محلي + محمل بديل من CDN -->
-    <script defer src="https://cdn.jsdelivr.net/npm/livekit-client@2.3.0/dist/livekit-client.umd.min.js"></script>
-    <script defer src="/livekit-loader.js"></script>
+    <!-- LiveKit من CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@livekit/client/dist/livekit-client.umd.min.js"></script>
 
     <!-- سكربتات المشروع -->
-    <script defer src="/common.js"></script>
-    <script defer src="/logout-fix.js"></script>
-    <script defer src="/watch.js"></script>
+    <script src="/common.js"></script>
+    <script src="/logout-fix.js"></script>
+    <script src="/watch.js"></script>
   </body>
 </html>

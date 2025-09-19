@@ -31,7 +31,7 @@
         </div>
 
         <div class="toolbar">
-          <button id="permBtn" class="btn secondary" style="display:none">منح إذن الكاميرا/المايك</button>
+          <button id="permBtn" class="btn secondary">منح إذن الكاميرا/المايك</button>
           <button id="joinBtn" class="btn">اتصال</button>
           <button id="leaveBtn" class="btn secondary" disabled>مغادرة</button>
         </div>
@@ -46,13 +46,12 @@
       </div>
     </div>
 
-    <!-- LiveKit: محلي + محمل بديل من CDN -->
-    <script defer src="https://cdn.jsdelivr.net/npm/livekit-client@2.3.0/dist/livekit-client.umd.min.js"></script>
-    <script defer src="/livekit-loader.js"></script>
+    <!-- LiveKit من CDN (ضروري قبل سكربتاتك) -->
+    <script src="https://cdn.jsdelivr.net/npm/@livekit/client/dist/livekit-client.umd.min.js"></script>
 
     <!-- سكربتات المشروع -->
-    <script defer src="/common.js"></script>
-    <script defer src="/logout-fix.js"></script>
-    <script defer src="/city.js"></script>
+    <script src="/common.js"></script>
+    <script src="/logout-fix.js"></script>
+    <script src="/city.js"></script>
   </body>
 </html>

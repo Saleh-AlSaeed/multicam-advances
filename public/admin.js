@@ -1,12 +1,12 @@
 const { Room, RoomEvent, LocalVideoTrack, LocalAudioTrack } = window.livekit;
 
 const CITIES = [
-  { label: 'مدينة رقم 1', room: 'city-1' },
-  { label: 'مدينة رقم 2', room: 'city-2' },
-  { label: 'مدينة رقم 3', room: 'city-3' },
-  { label: 'مدينة رقم 4', room: 'city-4' },
-  { label: 'مدينة رقم 5', room: 'city-5' },
-  { label: 'مدينة رقم 6', room: 'city-6' },
+  { label: 'مدينة رقم1', room: 'city-1' },
+  { label: 'مدينة رقم2', room: 'city-2' },
+  { label: 'مدينة رقم3', room: 'city-3' },
+  { label: 'مدينة رقم4', room: 'city-4' },
+  { label: 'مدينة رقم5', room: 'city-5' },
+  { label: 'مدينة رقم6', room: 'city-6' },
 ];
 
 let livekitUrl = null;

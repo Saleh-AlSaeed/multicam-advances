@@ -26,64 +26,97 @@ const PORT = process.env.PORT || 8080;
 // ---------- STATIC ----------
 app.use(express.static(path.join(__dirname, 'public')));
 
-// نضمن وجود مجلد vendor
+// ---------- LiveKit UMD fetch & cache ----------
 const VENDOR_DIR = path.join(__dirname, 'public', 'vendor');
 if (!fs.existsSync(VENDOR_DIR)) fs.mkdirSync(VENDOR_DIR, { recursive: true });
 
-// مسار الملف الهدف
 const LK_UMD_FILE = path.join(VENDOR_DIR, 'livekit-client.umd.min.js');
+// جرّب عدة مصادر
 const LK_UMD_URLS = [
-  // نحاول unpkg أولاً (عادة يعمل من بيئة Render/Koyeb حتى لو محجوب بالمتصفح)
   'https://unpkg.com/@livekit/client@2.3.0/dist/livekit-client.umd.min.js',
-  // احتياطي: jsDelivr
-  'https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js'
+  'https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js',
+  'https://raw.githubusercontent.com/livekit/client-sdk-js/v2.3.0/dist/livekit-client.umd.min.js'
 ];
 
-// دالة تنزيل https بسيطة (بدون حزم إضافية)
-function downloadToFile(url, destPath) {
+// تنزيل مع متابعة التحويلات و UA صريح
+function downloadWithRedirects(url, destPath, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(destPath);
-    https.get(url, (res) => {
-      if (res.statusCode !== 200) {
-        file.close(() => fs.unlink(destPath, () => {}));
-        return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
-      }
-      res.pipe(file);
-      file.on('finish', () => file.close(() => resolve()));
-    }).on('error', (err) => {
-      file.close(() => fs.unlink(destPath, () => {}));
-      reject(err);
-    });
+    const visited = [];
+    function doGet(currentUrl, redirectsLeft) {
+      visited.push(currentUrl);
+      const req = https.get(currentUrl, {
+        headers: { 'User-Agent': 'node-fetch-render/1.0' }
+      }, (res) => {
+        const code = res.statusCode || 0;
+        // التحويلات الشائعة
+        if ([301, 302, 303, 307, 308].includes(code)) {
+          const loc = res.headers.location;
+          if (!loc) return reject(new Error(`Redirect (${code}) without Location`));
+          if (redirectsLeft <= 0) return reject(new Error(`Too many redirects: ${visited.join(' -> ')}`));
+          res.resume(); // تخلص من البودي
+          const next = new URL(loc, currentUrl).toString();
+          return doGet(next, redirectsLeft - 1);
+        }
+        if (code !== 200) {
+          res.resume();
+          return reject(new Error(`HTTP ${code} for ${currentUrl}`));
+        }
+        const tmpPath = destPath + '.part';
+        const out = fs.createWriteStream(tmpPath);
+        res.pipe(out);
+        out.on('finish', () => {
+          out.close(() => {
+            try {
+              if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+              fs.renameSync(tmpPath, destPath);
+              resolve();
+            } catch (e) { reject(e); }
+          });
+        });
+        out.on('error', (e) => {
+          try { fs.unlinkSync(tmpPath); } catch {}
+          reject(e);
+        });
+      });
+      req.on('error', reject);
+    }
+    doGet(url, maxRedirects);
   });
 }
 
-// مسار يُقدم الملف محليًا، وإن لم يوجد يحمّله ويكاشّه ثم يقدمه
 app.get('/vendor/livekit-client.umd.min.js', async (req, res) => {
   try {
-    if (!fs.existsSync(LK_UMD_FILE) || fs.statSync(LK_UMD_FILE).size < 10_000) {
-      // نحاول عدة مصادر حتى ينجح واحد
+    const needFetch = !fs.existsSync(LK_UMD_FILE) || fs.statSync(LK_UMD_FILE).size < 10_000;
+    if (needFetch) {
       let lastErr = null;
       for (const url of LK_UMD_URLS) {
         try {
-          await downloadToFile(url, LK_UMD_FILE);
+          console.log('[LiveKit UMD] fetching from:', url);
+          await downloadWithRedirects(url, LK_UMD_FILE, 8);
+          console.log('[LiveKit UMD] saved to:', LK_UMD_FILE);
           break;
         } catch (e) {
           lastErr = e;
+          console.warn('[LiveKit UMD] source failed:', url, String(e));
         }
       }
-      if (!fs.existsSync(LK_UMD_FILE)) {
-        return res.status(503).send('Failed to fetch LiveKit UMD: ' + (lastErr?.message || 'unknown'));
+      if (!fs.existsSync(LK_UMD_FILE) || fs.statSync(LK_UMD_FILE).size < 10_000) {
+        return res
+          .status(503)
+          .type('text/plain; charset=utf-8')
+          .send('Failed to fetch LiveKit UMD: ' + (lastErr?.message || 'unknown'));
       }
     }
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     fs.createReadStream(LK_UMD_FILE).pipe(res);
   } catch (e) {
-    res.status(500).send('Error serving LiveKit UMD');
+    console.error('[LiveKit UMD] serve error', e);
+    res.status(500).type('text/plain; charset=utf-8').send('Error serving LiveKit UMD');
   }
 });
 
-// ---------- In-memory stores ----------
+// ---------- App state ----------
 const USERS = {
   "admin": { password: "admin123", role: "admin" },
   "مدينة رقم1": { password: "City1", role: "city", room: "city-1" },
@@ -102,7 +135,6 @@ const USERS = {
 
 const sessions = new Map(); // token -> { username, role, room, createdAt }
 
-// ---------- Persistence for watch sessions ----------
 const DATA_DIR = path.join(__dirname, 'data');
 const WATCH_FILE = path.join(DATA_DIR, 'watchSessions.json');
 
@@ -110,35 +142,27 @@ function loadWatchSessions() {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
     if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
-    const txt = fs.readFileSync(WATCH_FILE, 'utf-8');
-    return JSON.parse(txt);
+    return JSON.parse(fs.readFileSync(WATCH_FILE, 'utf-8'));
   } catch (e) {
     console.error('Failed to load watch sessions:', e);
     return [];
   }
 }
 function saveWatchSessions(list) {
-  try {
-    fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf-8');
-  } catch (e) {
-    console.error('Failed to save watch sessions:', e);
-  }
+  try { fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf-8'); }
+  catch (e) { console.error('Failed to save watch sessions:', e); }
 }
-let watchSessions = loadWatchSessions(); // [{ id, roomName, selection, createdAt, active }]
+let watchSessions = loadWatchSessions();
 
-// ---------- Helpers ----------
+// ---------- Auth helpers ----------
 function authMiddleware(required = null) {
   return (req, res, next) => {
     const hdr = req.headers.authorization || '';
     const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : null;
-    if (!token || !sessions.has(token)) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+    if (!token || !sessions.has(token)) return res.status(401).json({ error: 'Unauthorized' });
     const s = sessions.get(token);
     req.user = s;
-    if (required && s.role !== required) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
+    if (required && s.role !== required) return res.status(403).json({ error: 'Forbidden' });
     next();
   };
 }
@@ -146,7 +170,7 @@ function authMiddleware(required = null) {
 async function buildToken({ identity, roomName, canPublish = false, canSubscribe = true, metadata = '{}' }) {
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { identity, metadata });
   at.addGrant({ roomJoin: true, room: roomName, canPublish, canSubscribe, canPublishData: true });
-  at.ttl = 60 * 60 * 4; // 4h
+  at.ttl = 60 * 60 * 4;
   return await at.toJwt();
 }
 
@@ -165,8 +189,7 @@ app.post('/api/login', (req, res) => {
 });
 
 app.post('/api/logout', authMiddleware(), (req, res) => {
-  const token = req.user.token;
-  sessions.delete(token);
+  sessions.delete(req.user.token);
   res.json({ ok: true });
 });
 

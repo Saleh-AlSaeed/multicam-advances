@@ -1,31 +1,22 @@
-<!doctype html>
-<html lang="ar" class="rtl">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>المشاهدة</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <header class="topbar">
-      <div>📺 غرفة المشاهدة</div>
-      <div class="toolbar">
-        <button id="fsBtn" class="btn fullscreen-btn">ملء الشاشة</button>
-        <button id="logoutBtn" class="btn danger">خروج</button>
-      </div>
-    </header>
-    <div class="video-grid cols-1">
-      <div class="video-tile"><video id="player" autoplay playsinline controls></video><div class="label">البث</div></div>
-    </div>
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>المشاهدة</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <button id="logoutBtn" class="btn-exit">خروج</button>
+    <h1>المشاهدة</h1>
+  </header>
 
-    <!-- LiveKit محليًا -->
-    <script src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
+  <div class="container">
+    <div id="watchGrid" class="video-grid cols-2"></div>
+  </div>
 
-    <!-- سكربتاتك -->
-    <script src="/common.js"></script>
-    <script>
-      document.getElementById('logoutBtn')?.addEventListener('click', async () => { try { await API.logout(); } catch(_){} location.href='/'; });
-    </script>
-    <script src="/watch.js"></script>
-  </body>
+  <!-- ✅ تحميل LiveKit من CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
+  <script src="watch.js"></script>
+</body>
 </html>

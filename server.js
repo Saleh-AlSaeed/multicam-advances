@@ -35,18 +35,18 @@ app.use(
 // --------- USERS & SESSIONS ---------
 const USERS = {
   admin: { password: 'admin123', role: 'admin' },
-  'مدينة رقم 1': { password: 'City1', role: 'city', room: 'city-1' },
-  'مدينة رقم 2': { password: 'City2', role: 'city', room: 'city-2' },
-  'مدينة رقم 3': { password: 'City3', role: 'city', room: 'city-3' },
-  'مدينة رقم 4': { password: 'City4', role: 'city', room: 'city-4' },
-  'مدينة رقم 5': { password: 'City5', role: 'city', room: 'city-5' },
-  'مدينة رقم 6': { password: 'City6', role: 'city', room: 'city-6' }, // أصلحتها City6
-  'مشاهد 1': { password: 'Watch1', role: 'watcher' },
-  'مشاهد 2': { password: 'Watch2', role: 'watcher' },
-  'مشاهد 3': { password: 'Watch3', role: 'watcher' },
-  'مشاهد 4': { password: 'Watch4', role: 'watcher' },
-  'مشاهد 5': { password: 'Watch5', role: 'watcher' },
-  'مشاهد 6': { password: 'Watch6', role: 'watcher' },
+  'مدينة رقم1': { password: 'City1', role: 'city', room: 'city-1' },
+  'مدينة رقم2': { password: 'City2', role: 'city', room: 'city-2' },
+  'مدينة رقم3': { password: 'City3', role: 'city', room: 'city-3' },
+  'مدينة رقم4': { password: 'City4', role: 'city', room: 'city-4' },
+  'مدينة رقم5': { password: 'City5', role: 'city', room: 'city-5' },
+  'مدينة رقم6': { password: 'City6', role: 'city', room: 'city-6' }, // أصلحتها City6
+  'مشاهد1': { password: 'Watch1', role: 'watcher' },
+  'مشاهد2': { password: 'Watch2', role: 'watcher' },
+  'مشاهد3': { password: 'Watch3', role: 'watcher' },
+  'مشاهد4': { password: 'Watch4', role: 'watcher' },
+  'مشاهد5': { password: 'Watch5', role: 'watcher' },
+  'مشاهد6': { password: 'Watch6', role: 'watcher' },
 };
 
 const sessions = new Map(); // token -> { token, username, role, room, createdAt }

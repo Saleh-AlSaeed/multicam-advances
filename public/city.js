@@ -3,7 +3,7 @@
 let lkRoom = null;
 let localTracks = [];
 
-// انتظر تحميل LiveKit من الـ CDN (مع مهلة)
+// انتظر تحميل LiveKit من الملف المحلي
 async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
   const started = Date.now();

@@ -1,36 +1,51 @@
-<!DOCTYPE html>
-<html lang="ar">
-<head>
-  <meta charset="UTF-8">
-  <title>مدينة - نشر الكاميرا والمايك</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <header class="topbar">
-    <button id="logoutBtn" class="btn-exit">خروج</button>
-    <h1>مدينة - نشر الكاميرا والمايك</h1>
-  </header>
+<!doctype html>
+<html lang="ar" class="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>غرفة المدينة</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>🏙️ مدينة - نشر الكاميرا والمايك</div>
+      <div class="toolbar">
+        <button id="logoutBtn" class="btn danger">خروج</button>
+      </div>
+    </header>
+    <div class="container">
+      <div class="card">
+        <h3>تجهيز الاتصال</h3>
+        <div id="status" class="small">الأجهزة: <span id="devReady">جاري الفحص…</span></div>
+        <div class="grid cols-2">
+          <div>
+            <label>الكاميرا:</label>
+            <select id="camSel" class="input"></select>
+          </div>
+          <div>
+            <label>المايك:</label>
+            <select id="micSel" class="input"></select>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="joinBtn" class="btn">اتصال</button>
+          <button id="leaveBtn" class="btn secondary" disabled>مغادرة</button>
+        </div>
+        <hr/>
+        <div class="video-grid cols-1">
+          <div class="video-tile"><video id="preview" autoplay playsinline muted></video><div class="label">المعاينة</div></div>
+        </div>
+      </div>
+    </div>
 
-  <div class="container">
-    <h2>تجهيز الاتصال</h2>
-    <div>
-      <label for="cameraSelect">الكاميرا:</label>
-      <select id="cameraSelect"></select>
-    </div>
-    <div>
-      <label for="micSelect">المايك:</label>
-      <select id="micSelect"></select>
-    </div>
-    <div>
-      <button id="grantPermissionBtn">منح إذن الكاميرا/المايك</button>
-      <button id="connectBtn">اتصال</button>
-      <button id="disconnectBtn">مغادرة</button>
-    </div>
-    <div id="videoPreview"></div>
-  </div>
+    <!-- LiveKit UMD من CDN — يجب أن يكون قبل سكربتاتك -->
+    <script src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
+    <script>
+      if (!window.livekit) { alert('LiveKit client did not load'); }
+    </script>
 
-  <!-- ✅ تحميل LiveKit من CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
-  <script src="city.js"></script>
-</body>
+    <!-- سكربتات المشروع بالترتيب -->
+    <script src="/common.js"></script>
+    <script src="/city.js"></script>
+  </body>
 </html>

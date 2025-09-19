@@ -54,7 +54,24 @@
     </div>
 
     <!-- LiveKit CDN + fallback -->
-   <script src="https://unpkg.com/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
+   <script>
+(function loadLiveKit() {
+  var tried = 0;
+  var urls = [
+    "https://unpkg.com/@livekit/client@2.3.0/dist/livekit-client.umd.min.js",
+    "https://esm.sh/@livekit/client@2.3.0?bundle&target=es2019"
+  ];
+  function loadNext() {
+    if (tried >= urls.length) return alert("تعذر تحميل LiveKit");
+    var s = document.createElement("script");
+    s.src = urls[tried++];
+    s.onload = function(){ console.log("LiveKit loaded from", s.src); };
+    s.onerror = loadNext;
+    document.head.appendChild(s);
+  }
+  loadNext();
+})();
+</script>
 
     <!-- سكربتات المشروع -->
     <script src="/common.js"></script>

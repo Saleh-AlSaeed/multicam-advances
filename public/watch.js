@@ -1,14 +1,14 @@
-// Watch page, robust against late LiveKit loading
+// ===== صفحة المشاهدة (مشترك) =====
 
 let lkRoom = null;
 
-async function ensureLivekit(timeoutMs = 10000) {
+async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
-  const start = Date.now();
-  return await new Promise((resolve, reject) => {
-    const i = setInterval(() => {
-      if (window.livekit) { clearInterval(i); resolve(window.livekit); }
-      else if (Date.now() - start > timeoutMs) { clearInterval(i); reject(new Error('LiveKit client did not load')); }
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const t = setInterval(() => {
+      if (window.livekit) { clearInterval(t); resolve(window.livekit); }
+      else if (Date.now() - started > timeoutMs) { clearInterval(t); reject(new Error('LiveKit client did not load')); }
     }, 50);
   });
 }
@@ -27,7 +27,7 @@ async function start() {
     const id = qs('id');
     if (!id) { alert('لا توجد جلسة مشاهدة'); return; }
 
-    const lk = await ensureLivekit(); // ← انتظر LiveKit
+    const lk = await ensureLivekit();
     const { Room, RoomEvent } = lk;
 
     const rec = await API.getWatch(id);
@@ -43,9 +43,8 @@ async function start() {
     });
 
     document.getElementById('fsBtn')?.addEventListener('click', async () => {
-      const elem = player;
       if (document.fullscreenElement) document.exitFullscreen();
-      else if (elem.requestFullscreen) elem.requestFullscreen();
+      else player.requestFullscreen?.();
     });
   } catch (e) {
     console.error('watch start error:', e);

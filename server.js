@@ -270,7 +270,7 @@ app.get('/', (_, res) => {
 // ---------- Start ----------
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  if (LIVEKIT_URL.includes('REPLACE_ME')) {
+  if (LIVEKIT_URL.includes('wss://multicam-national-day-htyhphzo.livekit.cloud')) {
     console.log('⚠️  Please set LIVEKIT_URL in .env');
   }
 });

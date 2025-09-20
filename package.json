@@ -1,7 +1,7 @@
 {
   "name": "multicam-advances",
   "version": "1.0.0",
-  "description": "Multicam Advances Project (LiveKit, vendored UMD)",
+  "description": "Multicam Advances Project",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

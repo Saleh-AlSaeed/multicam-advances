@@ -46,32 +46,10 @@
       </div>
     </div>
 
-    <!-- لودر مرن: يحاول تحميل UMD محلياً ثم من مرايا موثوقة -->
-    <script>
-    (async () => {
-      if (window.livekit) return;
-      const srcs = [
-        '/vendor/livekit-client.umd.min.js',
-        'https://cdnjs.cloudflare.com/ajax/libs/livekit-client/2.15.7/livekit-client.umd.js',
-        'https://unpkg.com/@livekit/client@2.15.7/dist/livekit-client.umd.min.js',
-      ];
-      for (const src of srcs) {
-        try {
-          await new Promise((res, rej) => {
-            const s = document.createElement('script');
-            s.src = src; s.async = false;
-            s.onload = () => res();
-            s.onerror = () => rej(new Error('load failed: ' + src));
-            document.head.appendChild(s);
-          });
-          if (window.livekit) { console.log('[LiveKit] loaded from', src); break; }
-        } catch (e) { console.warn(e.message); }
-      }
-      if (!window.livekit) alert('LiveKit client did not load (missing UMD).');
-    })();
-    </script>
+    <!-- حمّل UMD محليًا أولاً (بدون defer/async) -->
+    <script src="/vendor/livekit-client.umd.min.js"></script>
 
-    <!-- ملفاتك -->
+    <!-- سكربتاتك (بدون defer أيضاً للحفاظ على الترتيب) -->
     <script src="/common.js"></script>
     <script src="/city.js"></script>
   </body>

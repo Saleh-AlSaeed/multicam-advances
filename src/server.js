@@ -51,7 +51,7 @@ const USERS = {
   "مدينة رقم3": { password: "City3", role: "city", room: "city-3" },
   "مدينة رقم4": { password: "City4", role: "city", room: "city-4" },
   "مدينة رقم5": { password: "City5", role: "city", room: "city-5" },
-  "مدينة رقم6": { password: "City6", role: "city", room: "city-6" },
+  "مدينة رقم6": { password: "City5", role: "city", room: "city-6" },
   "مشاهد1": { password: "Watch1", role: "watcher" },
   "مشاهد2": { password: "Watch2", role: "watcher" },
   "مشاهد3": { password: "Watch3", role: "watcher" },
@@ -90,7 +90,7 @@ let watchSessions = loadWatchSessions();
 function authMiddleware(required = null) {
   return (req, res, next) => {
     const hdr = req.headers.authorization || '';
-    const token = hdr.startsWith('Bearer') ? hdr.slice(7) : null;
+    const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : null;
     if (!token || !sessions.has(token)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }

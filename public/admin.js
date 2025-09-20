@@ -1,5 +1,4 @@
 // ===== لوحة المشرف =====
-
 function init() {
   const s = requireAuth();
   if (!s || s.role !== 'admin') { location.href = '/'; return; }
@@ -26,7 +25,6 @@ let composite = null;
 let currentSelection = [];
 
 // انتظار مكتبة LiveKit
-  <script src="/vendor/livekit-client.umd.min.js"></script>
 async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
   const started = Date.now();
@@ -109,13 +107,13 @@ function renderSlots() {
       <legend>كاميرا رقم ${i+1}</legend>
       <div class="grid cols-2">
         <div>
-          <label>اختر المستخدم</label>
+          <label>اختر المستخدم:</label>
           <select class="input userSel">
             ${CITIES.map(c => `<option value="${c.room}">${c.label}</option>`).join('')}
           </select>
         </div>
         <div>
-          <label>خيارات</label>
+          <label>خيارات:</label>
           <div class="controls-row">
             <label class="badge"><input type="checkbox" class="optVideo" checked> كاميرا</label>
             <label class="badge"><input type="checkbox" class="optAudio" checked> مايك</label>
@@ -221,7 +219,7 @@ async function createWatch() {
   document.getElementById('closeModalBtn')?.addEventListener('click', ()=>{ document.getElementById('viewModal')?.classList.remove('open'); });
 })();
   closeViewModal(); await startComposer(rec);
-  alert('تم إنشاء غرفة المشاهدة' + rec.roomName);
+  alert('تم إنشاء غرفة المشاهدة: ' + rec.roomName);
 }
 async function applyChanges() {
   if (!composite) return openViewModal();
@@ -232,12 +230,12 @@ async function applyChanges() {
     body: JSON.stringify({ selection })
   });
   await restartComposer(composite, selection);
-  alert('تم تطبيق التغييرات على البث الحالي');
+  alert('تم تطبيق التغييرات على البث الحالي.');
 }
 async function stopBroadcast() {
   if (!composite) return;
   await fetch(`/api/watch/${composite.id}/stop`, { method: 'POST', headers: { 'Authorization':'Bearer '+API.session().token }});
-  await stopComposer(); document.getElementById('stopBtn').disabled = true; alert('تم إيقاف البث');
+  await stopComposer(); document.getElementById('stopBtn').disabled = true; alert('تم إيقاف البث.');
 }
 function openWatchWindow(){ if(!composite) return alert('أنشئ جلسة مشاهدة أولاً'); window.open(`/watch.html?id=${composite.id}`, '_blank'); }
 

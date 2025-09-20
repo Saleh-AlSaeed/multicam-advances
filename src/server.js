@@ -11,7 +11,7 @@ import { AccessToken } from 'livekit-server-sdk';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// انتبه: مجلد public موجود بجذر المشروع (وليس داخل src)
+// public موجود بجذر المشروع (فوق src)
 const ROOT_DIR = path.join(__dirname, '..');
 
 const app = express();
@@ -25,25 +25,30 @@ const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
 const PORT = process.env.PORT || 8080;
 
-// ---------- STATIC ----------
-app.use(express.static(path.join(ROOT_DIR, 'public')));
-
-// ✅ نخدم UMD من node_modules مباشرة بدون CDN
+// ---------- LiveKit UMD (محلي فقط) ----------
 const UMD_PATH = path.join(ROOT_DIR, 'node_modules', '@livekit', 'client', 'dist', 'livekit-client.umd.min.js');
+
+// تعطيل الكاش على ملف UMD تحديدًا
 app.get('/vendor/livekit-client.umd.min.js', (req, res) => {
   try {
-    if (fs.existsSync(UMD_PATH)) {
-      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-      res.sendFile(UMD_PATH);
-    } else {
-      res.status(500).send('// LiveKit UMD not found in node_modules.');
+    if (!fs.existsSync(UMD_PATH)) {
+      res.status(500).type('application/javascript').send('// LiveKit UMD not found in node_modules.');
+      return;
     }
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.type('application/javascript; charset=utf-8');
+    res.sendFile(UMD_PATH);
   } catch (e) {
-    res.status(500).send('// Failed to serve LiveKit UMD.');
+    res.status(500).type('application/javascript').send('// Failed to serve LiveKit UMD.');
   }
 });
 
-// ---------- In-memory stores ----------
+// ---------- STATIC ----------
+app.use(express.static(path.join(ROOT_DIR, 'public')));
+
+// ---------- In-memory users ----------
 const USERS = {
   "admin": { password: "admin123", role: "admin" },
   "مدينة رقم1": { password: "City1", role: "city", room: "city-1" },

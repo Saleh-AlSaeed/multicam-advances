@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="ar" class="rtl">
   <head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>غرفة المدينة</title>
-    <link rel="stylesheet" href="/styles.css"/>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="topbar">
@@ -17,7 +17,6 @@
     <div class="container">
       <div class="card">
         <h3>تجهيز الاتصال</h3>
-        <div class="small">الأجهزة: <span id="devReady">❌</span></div>
         <div class="grid cols-2">
           <div>
             <label>الكاميرا:</label>
@@ -29,22 +28,21 @@
           </div>
         </div>
         <div class="toolbar">
-          <button id="grantBtn" class="btn secondary">منح إذن الكاميرا/المايك</button>
+          <button id="grantBtn" class="btn">منح إذن الكاميرا/المايك</button>
           <button id="joinBtn" class="btn">اتصال</button>
           <button id="leaveBtn" class="btn secondary" disabled>مغادرة</button>
         </div>
+        <div class="small">الحالة: <span id="status">بانتظار الإذن…</span></div>
         <hr/>
         <div class="video-grid cols-1">
-          <div class="video-tile">
-            <video id="preview" autoplay playsinline muted></video>
-            <div class="label">المعاينة</div>
-          </div>
+          <div class="video-tile"><video id="preview" autoplay playsinline muted></video><div class="label">المعاينة</div></div>
         </div>
       </div>
     </div>
 
-    <!-- LiveKit UMD محلي -->
+    <!-- نحمل UMD من السيرفر المحلي فقط -->
     <script src="/vendor/livekit-client.umd.min.js"></script>
+
     <script src="/common.js"></script>
     <script src="/city.js"></script>
   </body>

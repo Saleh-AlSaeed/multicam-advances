@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="ar" class="rtl">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
     <title>تسجيل الدخول</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css"/>
   </head>
   <body>
     <header class="topbar">
@@ -15,22 +15,21 @@
       <div class="card">
         <h2>تسجيل الدخول</h2>
         <p class="small">أدخل اسم المستخدم وكلمة المرور:</p>
-        <input id="username" class="input" placeholder="اسم المستخدم" />
-        <input id="password" class="input" placeholder="كلمة المرور" type="password" />
+        <input id="username" class="input" placeholder="اسم المستخدم"/>
+        <input id="password" class="input" placeholder="كلمة المرور" type="password"/>
         <button id="loginBtn" class="btn">دخول</button>
         <hr/>
         <p class="small">مستخدمون متاحون:</p>
         <ul class="small">
           <li>admin / admin123</li>
-          <li>مدينة رقم1 / City1 ... مدينة رقم6 / City6</li>
-          <li>مشاهد1 / Watch1 ... مشاهد6 / Watch6</li>
+          <li>مدينة رقم 1 / City1 ... مدينة رقم 6 / City6</li>
+          <li>مشاهد 1 / Watch1 ... مشاهد 6 / Watch6</li>
         </ul>
       </div>
     </div>
-
     <script src="/common.js"></script>
     <script>
-      (function() {
+      (function(){
         const s = API.session();
         if (s) goTo(s.role, s.room);
         const btn = document.getElementById('loginBtn');
@@ -44,9 +43,7 @@
             goTo(data.role, data.room);
           } catch (e) {
             alert(e.message || 'فشل الدخول');
-          } finally {
-            btn.disabled = false;
-          }
+          } finally { btn.disabled = false; }
         });
       })();
     </script>

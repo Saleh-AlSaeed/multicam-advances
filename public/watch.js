@@ -1,7 +1,7 @@
 // ===== صفحة المشاهدة (مشترك) =====
 
 let lkRoom = null;
-<script src="/vendor/livekit-client.umd.min.js"></script>
+
 async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
   const started = Date.now();

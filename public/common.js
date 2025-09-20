@@ -1,13 +1,8 @@
-// public/common.js
 const API = {
-  async getConfig() {
-    const r = await fetch('/api/config');
-    return r.json();
-  },
+  async getConfig() { const r = await fetch('/api/config'); return r.json(); },
   async login(username, password) {
     const r = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
     if (!r.ok) throw new Error('خطأ في الدخول');
@@ -16,26 +11,21 @@ const API = {
     return data;
   },
   session() {
-    try {
-      const s = localStorage.getItem('session');
-      return s ? JSON.parse(s) : null;
-    } catch { return null; }
+    try { const s = localStorage.getItem('session'); return s ? JSON.parse(s) : null; }
+    catch { return null; }
   },
   async logout() {
     const s = API.session();
+    if (!s) return;
     try {
-      if (s) await fetch('/api/logout', { method:'POST', headers: { 'Authorization': 'Bearer ' + s.token } });
-    } catch {}
-    localStorage.removeItem('session');
+      await fetch('/api/logout', { method:'POST', headers: { 'Authorization': 'Bearer ' + (s?.token || '') } });
+    } catch(_) {}
   },
   async token(roomName, identity, publish=false, subscribe=true) {
     const s = API.session();
     const r = await fetch('/api/token', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + s.token
-      },
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + (s?.token || '') },
       body: JSON.stringify({ roomName, publish, subscribe, identity })
     });
     if (!r.ok) throw new Error('فشل إنشاء التوكن');
@@ -45,10 +35,7 @@ const API = {
     const s = API.session();
     const r = await fetch('/api/create-watch', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + s.token
-      },
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + (s?.token || '') },
       body: JSON.stringify({ selection })
     });
     if (!r.ok) throw new Error('فشل إنشاء جلسة المشاهدة');
@@ -56,61 +43,39 @@ const API = {
   },
   async getActiveWatch() {
     const s = API.session();
-    const r = await fetch('/api/watch/active', {
-      headers: { 'Authorization': 'Bearer ' + s.token }
-    });
+    const r = await fetch('/api/watch/active', { headers: { 'Authorization':'Bearer ' + (s?.token || '') } });
     return r.json();
   },
   async getWatch(id) {
     const s = API.session();
-    const r = await fetch('/api/watch/' + id, {
-      headers: { 'Authorization': 'Bearer ' + s.token }
-    });
+    const r = await fetch('/api/watch/' + id, { headers: { 'Authorization':'Bearer ' + (s?.token || '') } });
     if (!r.ok) throw new Error('غير موجود');
     return r.json();
   }
 };
 
-// تنقّل حسب الدور
 function goTo(role, room) {
   if (role === 'admin') location.href = '/admin.html';
   else if (role === 'city') location.href = `/city.html?room=${encodeURIComponent(room)}`;
   else if (role === 'watcher') location.href = `/watchers.html`;
 }
+function requireAuth() { const s = API.session(); if (!s) { location.href = '/'; return null; } return s; }
 
-function requireAuth() {
-  const s = API.session();
-  if (!s) { location.href = '/'; return null; }
-  return s;
+function attachLogout(btn) {
+  if (!btn) return;
+  const handler = async (e) => {
+    e.preventDefault();
+    try { await API.logout(); } catch(_) {}
+    try { localStorage.removeItem('session'); } catch(_) {}
+    location.replace('/');
+  };
+  btn.onclick = null;
+  btn.addEventListener('click', handler, { passive:false });
 }
 
-// زر الخروج (يعمل في كل الصفحات)
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('logoutBtn');
-  if (btn) {
-    btn.addEventListener('click', async () => {
-      try { await API.logout(); } finally { location.href = '/'; }
-    });
-  }
+  if (btn) attachLogout(btn);
 });
 
-// فحص تحميل LiveKit UMD
-function ensureLivekitLoaded() {
-  if (!window.livekit) {
-    throw new Error('LiveKit client did not load');
-  }
-}
-
-// أداة سريعة لمنح الإذن (بدون LiveKit) لتسخين الصلاحيات
-async function warmupPermissions(audio = true, video = true) {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio, video });
-    stream.getTracks().forEach(t => t.stop());
-    return true;
-  } catch (e) {
-    alert('الرجاء السماح للكاميرا/المايك من المتصفح.');
-    return false;
-  }
-}
-
-window.AppCommon = { ensureLivekitLoaded, warmupPermissions };
+function qs(k, def='') { const u = new URL(location.href); return u.searchParams.get(k) ?? def; }

@@ -1,7 +1,6 @@
 let lkRoom = null;
 let previewStream = null;
 let hasPermission = false;
-<!-- ضع هذا السكربت أعلى السكربتات الأخرى -->
 
 function ensureAuthCity() {
   const s = requireAuth();

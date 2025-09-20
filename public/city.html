@@ -17,7 +17,9 @@
     <div class="container">
       <div class="card">
         <h3>تجهيز الاتصال</h3>
-        <div class="grid cols-2">
+
+        <div class="small" id="hwStatus">جاري فحص الأجهزة...</div>
+        <div class="grid cols-2" style="margin-top:8px">
           <div>
             <label>الكاميرا:</label>
             <select id="camSel" class="input"></select>
@@ -27,22 +29,26 @@
             <select id="micSel" class="input"></select>
           </div>
         </div>
-        <div class="toolbar">
+
+        <div class="toolbar" style="margin-top:6px">
           <button id="grantBtn" class="btn">منح إذن الكاميرا/المايك</button>
           <button id="joinBtn" class="btn">اتصال</button>
           <button id="leaveBtn" class="btn secondary" disabled>مغادرة</button>
         </div>
-        <div class="small">الحالة: <span id="status">بانتظار الإذن…</span></div>
+
         <hr/>
         <div class="video-grid cols-1">
-          <div class="video-tile"><video id="preview" autoplay playsinline muted></video><div class="label">المعاينة</div></div>
+          <div class="video-tile">
+            <video id="preview" autoplay playsinline muted></video>
+            <div class="label">المعاينة</div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- نحمل UMD من السيرفر المحلي فقط -->
+    <!-- UMD محلي -->
     <script src="/vendor/livekit-client.umd.min.js"></script>
-
+    <!-- سكربتاتك -->
     <script src="/common.js"></script>
     <script src="/city.js"></script>
   </body>

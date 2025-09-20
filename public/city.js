@@ -1,129 +1,113 @@
-const LK = window.livekit; // يجب أن يكون محملاً من UMD قبل هذا الملف
-
 let lkRoom = null;
-let localTracks = [];
+let previewStream = null;
+let hasPermission = false;
 
-function $(id){ return document.getElementById(id); }
-function setStatus(ok, msg){
-  const el = $('hwStatus'); if (!el) return;
-  el.textContent = msg || (ok ? 'الأجهزة ظاهرة.' : 'فشل');
-  el.style.color = ok ? '#16a34a' : '#dc2626';
+function ensureAuthCity() {
+  const s = requireAuth();
+  if (!s || s.role !== 'city') location.href = '/';
+  return s;
 }
 
 async function listDevices() {
   try {
-    const devs = await navigator.mediaDevices.enumerateDevices();
-    const camSel = $('camSel'), micSel = $('micSel');
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const camSel = document.getElementById('camSel');
+    const micSel = document.getElementById('micSel');
     camSel.innerHTML = ''; micSel.innerHTML = '';
-    devs.filter(d=>d.kind==='videoinput').forEach(d=>{
-      const o = document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||d.deviceId; camSel.appendChild(o);
+
+    devices.filter(d => d.kind === 'videoinput').forEach(d => {
+      const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId; camSel.appendChild(o);
     });
-    devs.filter(d=>d.kind==='audioinput').forEach(d=>{
-      const o = document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||d.deviceId; micSel.appendChild(o);
+    devices.filter(d => d.kind === 'audioinput').forEach(d => {
+      const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId; micSel.appendChild(o);
     });
-    setStatus(true, 'الأجهزة ظاهرة.');
-  } catch (e) {
-    console.error('enumerateDevices:', e);
-    setStatus(false, 'أذونات الأجهزة مطلوبة');
-  }
+
+    if (devices.some(d => d.label)) { document.getElementById('status').textContent = 'الأجهزة ظاهرة.'; hasPermission = true; }
+    else { document.getElementById('status').textContent = 'أسماء الأجهزة غير ظاهرة — امنح الإذن أولاً.'; }
+  } catch { document.getElementById('status').textContent = 'تعذّر قراءة الأجهزة.'; }
 }
 
-async function grantPermissions() {
+async function requestPermission() {
   try {
-    if (!LK) { alert('LiveKit client did not load (missing UMD).'); return; }
-    const camId = $('camSel').value || undefined;
-    const micId = $('micSel').value || undefined;
+    const camId = document.getElementById('camSel').value || undefined;
+    const micId = document.getElementById('micSel').value || undefined;
 
-    localTracks = await LK.createLocalTracks({
-      audio: micId ? { deviceId: micId } : true,
-      video: camId ? { deviceId: camId } : true
+    previewStream = await navigator.mediaDevices.getUserMedia({
+      video: camId ? { deviceId: { exact: camId } } : true,
+      audio: micId ? { deviceId: { exact: micId } } : true
     });
+    const v = document.getElementById('preview');
+    v.srcObject = previewStream; v.play().catch(()=>{});
 
-    const LocalVideoTrack = LK.LocalVideoTrack;
-    const v = $('preview');
-    const vt = localTracks.find(t => t instanceof LocalVideoTrack);
-    if (vt) vt.attach(v);
-
+    hasPermission = true;
+    document.getElementById('status').textContent = 'تم منح الإذن.';
     await listDevices();
   } catch (e) {
-    console.error('grantPermissions:', e);
-    alert('فشل منح الإذن: ' + (e?.message || e));
+    alert('لم يتم منح الإذن: ' + (e?.message || ''));
   }
 }
 
 async function join() {
-  const s = requireAuth(); if (!s || s.role !== 'city') return;
-  if (!LK) { alert('LiveKit client did not load (missing UMD).'); return; }
+  if (!window.livekit || !window.livekit.Room || !window.livekit.createLocalTracks) {
+    alert('LiveKit client did not load');
+    return;
+  }
+  const { Room, createLocalTracks, LocalVideoTrack } = window.livekit;
 
-  $('joinBtn').disabled = true;
+  const s = ensureAuthCity();
+  const roomName = qs('room');
+  const identity = `${s.username}`;
+
+  const cameraId = document.getElementById('camSel').value || undefined;
+  const micId    = document.getElementById('micSel').value || undefined;
+
   try {
-    if (!localTracks.length) {
-      const camId = $('camSel').value || undefined;
-      const micId = $('micSel').value || undefined;
-      localTracks = await LK.createLocalTracks({
-        audio: micId ? { deviceId: micId } : true,
-        video: camId ? { deviceId: camId } : true
-      });
-      const LocalVideoTrack = LK.LocalVideoTrack;
-      const v = $('preview');
-      const vt = localTracks.find(t => t instanceof LocalVideoTrack);
-      if (vt) vt.attach(v);
-    }
+    if (!hasPermission) await requestPermission();
 
-    const roomName = qs('room', 'city-1');
-    const identity = s.username || 'city-user';
+    const localTracks = await createLocalTracks({
+      audio: micId ? { deviceId: micId } : true,
+      video: cameraId ? { deviceId: cameraId } : true
+    });
 
-    let tk;
-    try {
-      tk = await API.token(roomName, identity, true, true);
-    } catch (err) {
-      console.error('token error:', err);
-      alert('فشل التوكن: ' + err.message);
-      return;
-    }
+    const tk = await API.token(roomName, identity, true, true);
+    const room = new Room({});
+    await room.connect(tk.url, tk.token, { tracks: localTracks });
 
-    if (!tk?.token || !tk?.url) {
-      console.error('Bad token payload:', tk);
-      alert('فشل الاتصال: لم نستلم token/url صحيحين من السيرفر');
-      return;
-    }
-    if (!/^wss:\/\//i.test(tk.url)) {
-      console.error('LIVEKIT_URL invalid:', tk.url);
-      alert('فشل الاتصال: LIVEKIT_URL غير صحيح (يجب أن يبدأ wss://)');
-      return;
-    }
+    const v = document.getElementById('preview');
+    const vt = localTracks.find(t => t instanceof LocalVideoTrack);
+    if (vt) vt.attach(v);
 
-    lkRoom = new LK.Room({});
-    await lkRoom.connect(tk.url, tk.token, { tracks: localTracks });
-
-    $('leaveBtn').disabled = false;
-    setStatus(true, 'متصل ✅');
+    lkRoom = room;
+    document.getElementById('joinBtn').disabled = true;
+    document.getElementById('leaveBtn').disabled = false;
+    document.getElementById('status').textContent = 'متصل.';
   } catch (e) {
-    console.error('connect error:', e);
     alert('فشل الاتصال: ' + (e?.message || e));
-  } finally {
-    $('joinBtn').disabled = false;
   }
 }
 
 async function leave() {
-  try {
-    if (lkRoom) { lkRoom.disconnect(); lkRoom = null; }
-    localTracks.forEach(t => t.stop());
-    localTracks = [];
-    $('leaveBtn').disabled = true;
-    setStatus(false, 'مغادرة');
-  } catch (e) { console.error('leave:', e); }
+  try { if (lkRoom) { lkRoom.disconnect(); lkRoom = null; } } catch {}
+  try { if (previewStream) { previewStream.getTracks().forEach(t => t.stop()); previewStream = null; } } catch {}
+  const v = document.getElementById('preview'); if (v) v.srcObject = null;
+
+  document.getElementById('joinBtn').disabled = false;
+  document.getElementById('leaveBtn').disabled = true;
+  document.getElementById('status').textContent = 'تمت المغادرة.';
 }
 
 (function init() {
-  const s = requireAuth();
-  if (!s || s.role !== 'city') { location.href = '/'; return; }
+  ensureAuthCity();
+  // زر الخروج أيضاً مربوط من common.js — هذا احتياط إضافي:
+  const lo = document.getElementById('logoutBtn'); if (lo) lo.addEventListener('click', (e)=>{ e.preventDefault(); }, { passive:false });
 
-  logoutBtnHandler($('logoutBtn'));
-  $('grantBtn')?.addEventListener('click', grantPermissions);
-  $('joinBtn')?.addEventListener('click', join);
-  $('leaveBtn')?.addEventListener('click', leave);
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+    document.getElementById('status').textContent = 'المتصفح لا يدعم enumerateDevices.';
+  } else {
+    listDevices();
+  }
 
-  listDevices();
+  document.getElementById('grantBtn').addEventListener('click', requestPermission, { passive:true });
+  document.getElementById('joinBtn').addEventListener('click', join, { passive:false });
+  document.getElementById('leaveBtn').addEventListener('click', leave, { passive:true });
 })();

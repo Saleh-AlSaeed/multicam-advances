@@ -1,18 +1,16 @@
+// src/server.js
 import 'dotenv/config';
 import express from 'express';
 import morgan from 'morgan';
 import cors from 'cors';
-import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { v4 as uuidv4 } from 'uuid';
 import { AccessToken } from 'livekit-server-sdk';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// انتبه: مجلد public موجود بجذر المشروع (وليس داخل src)
-const ROOT_DIR = path.join(__dirname, '..');
 
 const app = express();
 app.use(express.json());
@@ -26,24 +24,14 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H
 const PORT = process.env.PORT || 8080;
 
 // ---------- STATIC ----------
-app.use(express.static(path.join(ROOT_DIR, 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  etag: true,
+  lastModified: true,
+  cacheControl: true,
+  maxAge: '1d',
+}));
 
-// ✅ نخدم UMD من node_modules مباشرة بدون CDN
-const UMD_PATH = path.join(ROOT_DIR, 'node_modules', '@livekit', 'client', 'dist', 'livekit-client.umd.min.js');
-app.get('/vendor/livekit-client.umd.min.js', (req, res) => {
-  try {
-    if (fs.existsSync(UMD_PATH)) {
-      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-      res.sendFile(UMD_PATH);
-    } else {
-      res.status(500).send('// LiveKit UMD not found in node_modules.');
-    }
-  } catch (e) {
-    res.status(500).send('// Failed to serve LiveKit UMD.');
-  }
-});
-
-// ---------- In-memory stores ----------
+// ---------- USERS ----------
 const USERS = {
   "admin": { password: "admin123", role: "admin" },
   "مدينة رقم1": { password: "City1", role: "city", room: "city-1" },
@@ -51,38 +39,34 @@ const USERS = {
   "مدينة رقم3": { password: "City3", role: "city", room: "city-3" },
   "مدينة رقم4": { password: "City4", role: "city", room: "city-4" },
   "مدينة رقم5": { password: "City5", role: "city", room: "city-5" },
-  "مدينة رقم6": { password: "City5", role: "city", room: "city-6" },
+  "مدينة رقم6": { password: "City6", role: "city", room: "city-6" },
   "مشاهد1": { password: "Watch1", role: "watcher" },
   "مشاهد2": { password: "Watch2", role: "watcher" },
   "مشاهد3": { password: "Watch3", role: "watcher" },
   "مشاهد4": { password: "Watch4", role: "watcher" },
   "مشاهد5": { password: "Watch5", role: "watcher" },
-  "مشاهد6": { password: "Watch6", role: "watcher" }
+  "مشاهد6": { password: "Watch6", role: "watcher" },
 };
 
 const sessions = new Map(); // token -> { username, role, room, createdAt }
 
-// ---------- Persistence for watch sessions ----------
-const DATA_DIR = path.join(ROOT_DIR, 'data');
+// ---------- WATCH persistence ----------
+const DATA_DIR = path.join(__dirname, '..', 'data');
 const WATCH_FILE = path.join(DATA_DIR, 'watchSessions.json');
 
 function loadWatchSessions() {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
     if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
-    const txt = fs.readFileSync(WATCH_FILE, 'utf-8');
-    return JSON.parse(txt);
-  } catch (e) {
-    console.error('Failed to load watch sessions:', e);
+    return JSON.parse(fs.readFileSync(WATCH_FILE, 'utf-8'));
+  } catch {
     return [];
   }
 }
 function saveWatchSessions(list) {
   try {
     fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf-8');
-  } catch (e) {
-    console.error('Failed to save watch sessions:', e);
-  }
+  } catch {}
 }
 let watchSessions = loadWatchSessions();
 
@@ -100,13 +84,22 @@ function authMiddleware(required = null) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     next();
-  }
+  };
 }
 
 async function buildToken({ identity, roomName, canPublish = false, canSubscribe = true, metadata = '{}' }) {
-  const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { identity, metadata });
-  at.addGrant({ roomJoin: true, room: roomName, canPublish, canSubscribe, canPublishData: true });
-  at.ttl = 60 * 60 * 4;
+  const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+    identity,
+    metadata
+  });
+  at.addGrant({
+    roomJoin: true,
+    room: roomName,
+    canPublish,
+    canSubscribe,
+    canPublishData: true
+  });
+  at.ttl = 60 * 60 * 4; // 4 ساعات
   return await at.toJwt();
 }
 
@@ -122,13 +115,13 @@ app.post('/api/login', (req, res) => {
   }
   const { role, room } = USERS[username];
   const token = uuidv4();
-  sessions.set(token, { token, username, role, room, createdAt: Date.now() });
-  res.json({ token, username, role, room });
+  const s = { token, username, role, room: room || null, createdAt: Date.now() };
+  sessions.set(token, s);
+  res.json(s);
 });
 
 app.post('/api/logout', authMiddleware(), (req, res) => {
-  const token = req.user.token;
-  sessions.delete(token);
+  sessions.delete(req.user.token);
   res.json({ ok: true });
 });
 
@@ -139,8 +132,10 @@ app.post('/api/token', authMiddleware(), async (req, res) => {
   }
   try {
     const jwt = await buildToken({
-      identity, roomName,
-      canPublish: !!publish, canSubscribe: !!subscribe,
+      identity,
+      roomName,
+      canPublish: !!publish,
+      canSubscribe: !!subscribe,
       metadata: JSON.stringify({ by: req.user.username, role: req.user.role })
     });
     res.json({ token: jwt, url: LIVEKIT_URL });
@@ -150,7 +145,7 @@ app.post('/api/token', authMiddleware(), async (req, res) => {
   }
 });
 
-// Admin creates a watch session
+// Watch sessions (admin)
 app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
   const { selection } = req.body || {};
   if (!Array.isArray(selection) || selection.length === 0 || selection.length > 6) {
@@ -189,9 +184,11 @@ app.get('/api/watch/active', authMiddleware(), (req, res) => {
   const active = [...(watchSessions || [])].reverse().find(w => w.active);
   res.json(active || null);
 });
+
 app.get('/api/watch', authMiddleware('admin'), (req, res) => {
   res.json(watchSessions || []);
 });
+
 app.get('/api/watch/:id', authMiddleware(), (req, res) => {
   const item = (watchSessions || []).find(w => w.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'not_found' });
@@ -200,7 +197,7 @@ app.get('/api/watch/:id', authMiddleware(), (req, res) => {
 
 // Root
 app.get('/', (_, res) => {
-  res.sendFile(path.join(ROOT_DIR, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {

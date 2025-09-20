@@ -1,4 +1,5 @@
 // ===== لوحة المشرف =====
+
 function init() {
   const s = requireAuth();
   if (!s || s.role !== 'admin') { location.href = '/'; return; }
@@ -25,6 +26,7 @@ let composite = null;
 let currentSelection = [];
 
 // انتظار مكتبة LiveKit
+  <script src="/vendor/livekit-client.umd.min.js"></script>
 async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
   const started = Date.now();

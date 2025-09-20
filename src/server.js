@@ -13,15 +13,7 @@ const __dirname = path.dirname(__filename);
 
 // انتبه: مجلد public موجود بجذر المشروع (وليس داخل src)
 const ROOT_DIR = path.join(__dirname, '..');
-app.get('/vendor/livekit-client.umd.min.js', (req, res, next) => {
-  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.set('Pragma', 'no-cache');
-  res.set('Expires', '0');
-  next();
-});
 
-// خدم مجلد public
-app.use(express.static(path.join(__dirname, 'public')));
 const app = express();
 app.use(express.json());
 app.use(morgan('dev'));

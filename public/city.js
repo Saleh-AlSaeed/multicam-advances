@@ -1,5 +1,4 @@
-// مرجع ثابت للمكتبة
-const LK = window.livekit;
+const LK = window.livekit; // يجب أن يكون محملاً من UMD قبل هذا الملف
 
 let lkRoom = null;
 let localTracks = [];
@@ -54,13 +53,10 @@ async function grantPermissions() {
 
 async function join() {
   const s = requireAuth(); if (!s || s.role !== 'city') return;
-
-  // لا تُظهر رسالة "client did not load" إلا إن كانت فعلاً غير محمّلة
   if (!LK) { alert('LiveKit client did not load (missing UMD).'); return; }
 
   $('joinBtn').disabled = true;
   try {
-    // لو ما في Tracks (لم يضغط منح الإذن) ننشئها الآن
     if (!localTracks.length) {
       const camId = $('camSel').value || undefined;
       const micId = $('micSel').value || undefined;
@@ -77,7 +73,6 @@ async function join() {
     const roomName = qs('room', 'city-1');
     const identity = s.username || 'city-user';
 
-    // token
     let tk;
     try {
       tk = await API.token(roomName, identity, true, true);

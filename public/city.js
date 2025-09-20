@@ -22,9 +22,9 @@ async function listDevices() {
       const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId; micSel.appendChild(o);
     });
 
-    if (devices.some(d => d.label)) { document.getElementById('status').textContent = 'الأجهزة ظاهرة.'; hasPermission = true; }
-    else { document.getElementById('status').textContent = 'أسماء الأجهزة غير ظاهرة — امنح الإذن أولاً.'; }
-  } catch { document.getElementById('status').textContent = 'تعذّر قراءة الأجهزة.'; }
+    if (devices.some(d => d.label)) { document.getElementById('status').textContent = 'الأجهزة ظاهرة'; hasPermission = true; }
+    else { document.getElementById('status').textContent = 'أسماء الأجهزة غير ظاهرة — امنح الإذن أولاً'; }
+  } catch { document.getElementById('status').textContent = 'تعذّر قراءة الأجهزة'; }
 }
 
 async function requestPermission() {
@@ -40,10 +40,10 @@ async function requestPermission() {
     v.srcObject = previewStream; v.play().catch(()=>{});
 
     hasPermission = true;
-    document.getElementById('status').textContent = 'تم منح الإذن.';
+    document.getElementById('status').textContent = 'تم منح الإذن';
     await listDevices();
   } catch (e) {
-    alert('لم يتم منح الإذن: ' + (e?.message || ''));
+    alert('لم يتم منح الإذن' + (e?.message || ''));
   }
 }
 
@@ -80,9 +80,9 @@ async function join() {
     lkRoom = room;
     document.getElementById('joinBtn').disabled = true;
     document.getElementById('leaveBtn').disabled = false;
-    document.getElementById('status').textContent = 'متصل.';
+    document.getElementById('status').textContent = 'متصل';
   } catch (e) {
-    alert('فشل الاتصال: ' + (e?.message || e));
+    alert('فشل الاتصال' + (e?.message || e));
   }
 }
 
@@ -93,7 +93,7 @@ async function leave() {
 
   document.getElementById('joinBtn').disabled = false;
   document.getElementById('leaveBtn').disabled = true;
-  document.getElementById('status').textContent = 'تمت المغادرة.';
+  document.getElementById('status').textContent = 'تمت المغادرة';
 }
 
 (function init() {
@@ -102,7 +102,7 @@ async function leave() {
   const lo = document.getElementById('logoutBtn'); if (lo) lo.addEventListener('click', (e)=>{ e.preventDefault(); }, { passive:false });
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-    document.getElementById('status').textContent = 'المتصفح لا يدعم enumerateDevices.';
+    document.getElementById('status').textContent = 'المتصفح لا يدعم enumerateDevices';
   } else {
     listDevices();
   }

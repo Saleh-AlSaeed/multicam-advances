@@ -9,7 +9,6 @@
   var SOURCES = [
     '/vendor/livekit-client.umd.min.js',
     'https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js',
-    'https://unpkg.com/@livekit/client@2.3.0/dist/livekit-client.umd.min.js',
     'https://cdn.jsdelivr.net/npm/@livekit/client/dist/livekit-client.umd.min.js'
   ];
 

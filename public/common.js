@@ -73,7 +73,6 @@ function attachLogout(btn) {
   btn.addEventListener('click', handler, { passive:false });
 }
 
-// ربط تلقائي لأي زر يحمل id="logoutBtn" حتى لو تعطّل سكربتات أخرى
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('logoutBtn');
   if (btn) attachLogout(btn);

@@ -15,12 +15,16 @@
       </div>
     </header>
     <div class="video-grid cols-1">
-      <div class="video-tile"><video id="player" autoplay playsinline controls></video><div class="label">البث</div></div>
+      <div class="video-tile">
+        <video id="player" autoplay playsinline controls></video>
+        <div class="label">البث</div>
+      </div>
     </div>
 
-    <!-- UMD محلي -->
-    <script src="/vendor/livekit-client.umd.min.js"></script>
-    <!-- سكربتاتك -->
+    <!-- LiveKit UMD: CDN ثم fallback محلي -->
+    <script src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
+    <script> if (!window.livekit) { document.write('<script src="/vendor/livekit-client.umd.min.js"><\\/script>'); } </script>
+
     <script src="/common.js"></script>
     <script src="/watch.js"></script>
   </body>

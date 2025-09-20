@@ -1,43 +1,28 @@
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; width:100%; height:100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans; }
-a { color: #0d6efd; text-decoration: none; }
-.container { max-width: 1100px; margin: 0 auto; padding: 16px; }
-.card { background:#fff; border:1px solid #ddd; border-radius:16px; padding:20px; box-shadow: 0 10px 24px rgba(0,0,0,0.06); }
-.btn { display:inline-block; padding: 10px 16px; border-radius: 12px; border:none; background:#0d6efd; color:#fff; font-weight:600; cursor:pointer; }
+html, body { margin:0; padding:0; width:100%; height:100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans; background:#0b0f14; color:#fff; }
+a { color:#0d6efd; text-decoration:none; }
+.container { max-width:1100px; margin:0 auto; padding:16px; }
+.card { background:#0f1720; border:1px solid #1f2937; border-radius:16px; padding:20px; box-shadow:0 10px 24px rgba(0,0,0,.35); }
+.btn { display:inline-block; padding:10px 16px; border-radius:12px; border:none; background:#0d6efd; color:#fff; font-weight:600; cursor:pointer; }
 .btn.secondary { background:#6c757d; }
 .btn.danger { background:#dc3545; }
 .btn.success { background:#198754; }
 .btn:disabled { opacity:.6; cursor:not-allowed; }
-.input { width:100%; padding:12px 14px; border-radius:12px; border:1px solid #ccc; margin:6px 0 12px; }
+.input { width:100%; padding:12px 14px; border-radius:12px; border:1px solid #334155; background:#0b1622; color:#e5e7eb; margin:6px 0 12px; }
 .grid { display:grid; gap:12px; }
 .grid.cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
 .grid.cols-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .grid.cols-6 { grid-template-columns: repeat(6, minmax(0,1fr)); }
 header.topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; background:#111827; color:#fff; position:sticky; top:0; z-index:100; }
-.badge { display:inline-flex; align-items:center; gap:6px; background:#f1f5f9; border:1px solid #e2e8f0; padding:6px 10px; border-radius:999px; font-size:12px; }
-hr { border:none; height:1px; background:#e9ecef; margin:16px 0; }
-.small { font-size: 12px; color:#6b7280; }
+.small { font-size:12px; color:#9ca3af; }
+.badge { display:inline-flex; align-items:center; gap:6px; background:#111827; border:1px solid #1f2937; padding:6px 10px; border-radius:999px; font-size:12px; color:#e5e7eb; }
+hr { border:none; height:1px; background:#1f2937; margin:16px 0; }
 .video-grid { display:grid; gap:8px; width:100%; height: calc(100vh - 140px); background:#000; }
 .video-grid.cols-1 { grid-template-columns: 1fr; }
-.video-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
 .video-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
-.video-grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
-.video-grid.cols-5 { grid-template-columns: repeat(3, 1fr); }
-.video-grid.cols-6 { grid-template-columns: repeat(3, 1fr); }
 .video-tile { position:relative; background:#000; border-radius:12px; overflow:hidden; }
 .video-tile video { width:100%; height:100%; object-fit:cover; display:block; }
-.video-tile .label { position:absolute; left:8px; bottom:8px; background:rgba(0,0,0,0.6); color:#fff; padding:4px 8px; border-radius:999px; font-size:12px; }
-.toolbar { display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
-fieldset { border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
-legend { padding:0 6px; color:#111827; }
-.modal { position: fixed; inset:0; display:none; align-items:center; justify-content:center; background: rgba(0,0,0,0.5); z-index:9999; }
-.modal.open { display:flex; }
-.modal .box { background:#fff; padding:20px; border-radius:16px; width:min(900px, 95vw); max-height:85vh; overflow:auto; }
-.fullscreen-btn { position: fixed; right: 14px; bottom: 14px; z-index: 9000; }
-.hidden { display:none !important; }
+.video-tile .label { position:absolute; left:8px; bottom:8px; background:rgba(0,0,0,.6); color:#fff; padding:4px 8px; border-radius:999px; font-size:12px; }
 .rtl { direction: rtl; }
-
-/* Audio meters */
-.meter { position:absolute; left:8px; top:8px; right:8px; height:6px; background:rgba(255,255,255,0.15); border-radius:999px; overflow:hidden; }
-.meter > i { display:block; height:100%; width:0%; background:#22c55e; transition: width .08s linear; }
-.tag { padding:4px 8px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:999px; font-size:12px; color:#312e81; }
+.hidden { display:none !important; }
+.fullscreen-btn { position: fixed; right: 14px; bottom: 14px; z-index: 9000; }

@@ -43,7 +43,7 @@ const API = {
       localStorage.removeItem('session');
     }
   },
-
+<script src="/vendor/livekit-client.umd.min.js"></script>
   async token(roomName, identity, publish=false, subscribe=true) {
     const s = API.session();
     return this._request('/api/token', {

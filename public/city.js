@@ -1,113 +1,159 @@
-let lkRoom = null;
-let previewStream = null;
-let hasPermission = false;
+// نعتمد مرجع ثابت للمكتبة منذ البداية
+const LK = window.livekit;
 
-function ensureAuthCity() {
-  const s = requireAuth();
-  if (!s || s.role !== 'city') location.href = '/';
-  return s;
+let lkRoom = null;
+let localTracks = [];
+let devicesReady = false;
+
+// UI helpers
+function $(id){ return document.getElementById(id); }
+function setStatus(ok, msg){
+  const el = $('hwStatus');
+  if(!el) return;
+  el.textContent = msg || (ok ? 'الأجهزة ظاهرة.' : 'فشل الاتصال');
+  el.style.color = ok ? '#16a34a' : '#dc2626';
 }
 
 async function listDevices() {
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const camSel = document.getElementById('camSel');
-    const micSel = document.getElementById('micSel');
-    camSel.innerHTML = ''; micSel.innerHTML = '';
-
-    devices.filter(d => d.kind === 'videoinput').forEach(d => {
-      const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId; camSel.appendChild(o);
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const camSel = $('camSel');
+    const micSel = $('micSel');
+    camSel.innerHTML = '';
+    micSel.innerHTML = '';
+    devs.filter(d => d.kind === 'videoinput').forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.deviceId; o.textContent = d.label || d.deviceId;
+      camSel.appendChild(o);
     });
-    devices.filter(d => d.kind === 'audioinput').forEach(d => {
-      const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || d.deviceId; micSel.appendChild(o);
+    devs.filter(d => d.kind === 'audioinput').forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.deviceId; o.textContent = d.label || d.deviceId;
+      micSel.appendChild(o);
     });
-
-    if (devices.some(d => d.label)) { document.getElementById('status').textContent = 'الأجهزة ظاهرة.'; hasPermission = true; }
-    else { document.getElementById('status').textContent = 'أسماء الأجهزة غير ظاهرة — امنح الإذن أولاً.'; }
-  } catch { document.getElementById('status').textContent = 'تعذّر قراءة الأجهزة.'; }
+    devicesReady = true;
+    setStatus(true, 'الأجهزة ظاهرة.');
+  } catch (e) {
+    console.error('enumerateDevices failed:', e);
+    setStatus(false, 'أذونات الأجهزة مطلوبة');
+  }
 }
 
-async function requestPermission() {
+async function grantPermissions() {
   try {
-    const camId = document.getElementById('camSel').value || undefined;
-    const micId = document.getElementById('micSel').value || undefined;
+    const camId = $('camSel').value || undefined;
+    const micId = $('micSel').value || undefined;
 
-    previewStream = await navigator.mediaDevices.getUserMedia({
-      video: camId ? { deviceId: { exact: camId } } : true,
-      audio: micId ? { deviceId: { exact: micId } } : true
+    // إن لم توجد المكتبة لا تكمل
+    if (!LK) {
+      alert('LiveKit client did not load (missing UMD)');
+      return;
+    }
+
+    // أنشئ مسارات محلية للمعاينة
+    localTracks = await LK.createLocalTracks({
+      audio: micId ? { deviceId: micId } : true,
+      video: camId ? { deviceId: camId } : true
     });
-    const v = document.getElementById('preview');
-    v.srcObject = previewStream; v.play().catch(()=>{});
 
-    hasPermission = true;
-    document.getElementById('status').textContent = 'تم منح الإذن.';
+    // اعرض الفيديو في المعاينة
+    const LocalVideoTrack = LK.LocalVideoTrack;
+    const v = $('preview');
+    const vt = localTracks.find(t => t instanceof LocalVideoTrack);
+    if (vt) vt.attach(v);
+
     await listDevices();
   } catch (e) {
-    alert('لم يتم منح الإذن: ' + (e?.message || ''));
+    console.error('grantPermissions error:', e);
+    alert('فشل منح الإذن: ' + (e?.message || e));
   }
 }
 
 async function join() {
-  if (!window.livekit || !window.livekit.Room || !window.livekit.createLocalTracks) {
-    alert('LiveKit client did not load');
-    return;
-  }
-  const { Room, createLocalTracks, LocalVideoTrack } = window.livekit;
-
-  const s = ensureAuthCity();
-  const roomName = qs('room');
-  const identity = `${s.username}`;
-
-  const cameraId = document.getElementById('camSel').value || undefined;
-  const micId    = document.getElementById('micSel').value || undefined;
+  const s = requireAuth(); // من common.js
+  if (!s || s.role !== 'city') { location.href = '/'; return; }
 
   try {
-    if (!hasPermission) await requestPermission();
+    $('joinBtn').disabled = true;
 
-    const localTracks = await createLocalTracks({
-      audio: micId ? { deviceId: micId } : true,
-      video: cameraId ? { deviceId: cameraId } : true
-    });
+    if (!LK) {
+      alert('LiveKit client did not load (window.livekit missing)');
+      return;
+    }
 
-    const tk = await API.token(roomName, identity, true, true);
-    const room = new Room({});
-    await room.connect(tk.url, tk.token, { tracks: localTracks });
+    const roomName = new URL(location.href).searchParams.get('room');
+    const identity = s.username || 'city-user';
 
-    const v = document.getElementById('preview');
-    const vt = localTracks.find(t => t instanceof LocalVideoTrack);
-    if (vt) vt.attach(v);
+    // إن لم يكن لدينا مسارات محلية (لم يضغط منح الإذن)، أنشئها الآن
+    if (!localTracks.length) {
+      const camId = $('camSel').value || undefined;
+      const micId = $('micSel').value || undefined;
+      localTracks = await LK.createLocalTracks({
+        audio: micId ? { deviceId: micId } : true,
+        video: camId ? { deviceId: camId } : true
+      });
+      const LocalVideoTrack = LK.LocalVideoTrack;
+      const v = $('preview');
+      const vt = localTracks.find(t => t instanceof LocalVideoTrack);
+      if (vt) vt.attach(v);
+    }
 
-    lkRoom = room;
-    document.getElementById('joinBtn').disabled = true;
-    document.getElementById('leaveBtn').disabled = false;
-    document.getElementById('status').textContent = 'متصل.';
+    // اطلب التوكن
+    const tkResp = await API.token(roomName, identity, true, true);
+    console.log('token response:', tkResp);
+
+    if (!tkResp?.token || !tkResp?.url) {
+      console.error('Bad token payload:', tkResp);
+      alert('فشل الاتصال: لم نستلم token/url من السيرفر');
+      return;
+    }
+    if (!/^wss:\/\//i.test(tkResp.url)) {
+      console.error('LIVEKIT_URL must start with wss://. Got:', tkResp.url);
+      alert('فشل الاتصال: LIVEKIT_URL غير صحيح (يجب أن يبدأ wss://)');
+      return;
+    }
+
+    // اتصل بالغرفة
+    lkRoom = new LK.Room({});
+    await lkRoom.connect(tkResp.url, tkResp.token, { tracks: localTracks });
+
+    $('leaveBtn').disabled = false;
+    setStatus(true, 'متصل ✅');
   } catch (e) {
+    console.error('join/connect error:', e);
+    // أعرض السبب الحقيقي بدل الرسالة العامة
     alert('فشل الاتصال: ' + (e?.message || e));
+  } finally {
+    $('joinBtn').disabled = false;
   }
 }
 
 async function leave() {
-  try { if (lkRoom) { lkRoom.disconnect(); lkRoom = null; } } catch {}
-  try { if (previewStream) { previewStream.getTracks().forEach(t => t.stop()); previewStream = null; } } catch {}
-  const v = document.getElementById('preview'); if (v) v.srcObject = null;
-
-  document.getElementById('joinBtn').disabled = false;
-  document.getElementById('leaveBtn').disabled = true;
-  document.getElementById('status').textContent = 'تمت المغادرة.';
+  try {
+    if (lkRoom) { lkRoom.disconnect(); lkRoom = null; }
+    localTracks.forEach(t => t.stop());
+    localTracks = [];
+    $('leaveBtn').disabled = true;
+    setStatus(false, 'مغادرة');
+  } catch (e) {
+    console.error('leave error:', e);
+  }
 }
 
 (function init() {
-  ensureAuthCity();
-  // زر الخروج أيضاً مربوط من common.js — هذا احتياط إضافي:
-  const lo = document.getElementById('logoutBtn'); if (lo) lo.addEventListener('click', (e)=>{ e.preventDefault(); }, { passive:false });
+  const s = requireAuth();
+  if (!s || s.role !== 'city') { location.href = '/'; return; }
 
-  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-    document.getElementById('status').textContent = 'المتصفح لا يدعم enumerateDevices.';
-  } else {
-    listDevices();
-  }
+  // زر الخروج
+  $('logoutBtn')?.addEventListener('click', async () => {
+    try { await API.logout(); } finally { location.href = '/'; }
+  });
 
-  document.getElementById('grantBtn').addEventListener('click', requestPermission, { passive:true });
-  document.getElementById('joinBtn').addEventListener('click', join, { passive:false });
-  document.getElementById('leaveBtn').addEventListener('click', leave, { passive:true });
+  // اربط الأزرار
+  $('grantBtn')?.addEventListener('click', grantPermissions);
+  $('joinBtn')?.addEventListener('click', join);
+  $('leaveBtn')?.addEventListener('click', leave);
+
+  // أول تحميل: أظهر الأجهزة (قد يطلب إذن)
+  listDevices();
 })();

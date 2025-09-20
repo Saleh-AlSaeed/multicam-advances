@@ -2,40 +2,7 @@ let lkRoom = null;
 let previewStream = null;
 let hasPermission = false;
 <!-- ضع هذا السكربت أعلى السكربتات الأخرى -->
-<script>
-(async () => {
-  if (window.livekit) return; // محمّل مسبقًا
 
-  const sources = [
-    '/vendor/livekit-client.umd.min.js', // محلي (أفضل خيار)
-    'https://cdnjs.cloudflare.com/ajax/libs/livekit-client/2.15.7/livekit-client.umd.js',
-    'https://unpkg.com/@livekit/client@2.15.7/dist/livekit-client.umd.min.js',
-  ];
-
-  for (const src of sources) {
-    try {
-      await new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = src;
-        s.async = false;
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error('failed: ' + src));
-        document.head.appendChild(s);
-      });
-      if (window.livekit) {
-        console.log('[LiveKit] loaded from', src);
-        break;
-      }
-    } catch (e) {
-      console.warn('[LiveKit] load failed:', e.message);
-    }
-  }
-
-  if (!window.livekit) {
-    alert('LiveKit client did not load (missing UMD).');
-  }
-})();
-</script>
 function ensureAuthCity() {
   const s = requireAuth();
   if (!s || s.role !== 'city') location.href = '/';

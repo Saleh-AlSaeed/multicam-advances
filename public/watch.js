@@ -1,54 +1,34 @@
-// ===== صفحة المشاهدة (مشترك) =====
-
+// public/watch.js
+const { Room, RoomEvent } = window.livekit || {};
 let lkRoom = null;
-
-async function ensureLivekit(timeoutMs = 12000) {
-  if (window.livekit) return window.livekit;
-  const started = Date.now();
-  return new Promise((resolve, reject) => {
-    const t = setInterval(() => {
-      if (window.livekit) { clearInterval(t); resolve(window.livekit); }
-      else if (Date.now() - started > timeoutMs) { clearInterval(t); reject(new Error('LiveKit client did not load')); }
-    }, 50);
-  });
-}
 
 function ensureAuthWatch() {
   const s = requireAuth();
   if (!s) location.href = '/';
   return s;
 }
+function qs(k, def='') { const u = new URL(location.href); return u.searchParams.get(k) ?? def; }
 
 async function start() {
-  try {
-    ensureAuthWatch();
-    logoutBtnHandler(document.getElementById('logoutBtn'));
+  if (!window.livekit) { alert('LiveKit client did not load'); return; }
+  ensureAuthWatch();
+  const id = qs('id');
+  const rec = await API.getWatch(id);
+  const tk = await API.token(rec.roomName, `viewer-${API.session().username}`, false, true);
 
-    const id = qs('id');
-    if (!id) { alert('لا توجد جلسة مشاهدة'); return; }
+  lkRoom = new Room({ adaptiveStream: true });
+  await lkRoom.connect(tk.url, tk.token);
 
-    const lk = await ensureLivekit();
-    const { Room, RoomEvent } = lk;
+  const player = document.getElementById('player');
+  lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
+    if (track.kind === 'video') track.attach(player);
+    if (track.kind === 'audio') track.attach(player);
+  });
 
-    const rec = await API.getWatch(id);
-    const tk  = await API.token(rec.roomName, `viewer-${API.session().username}`, false, true);
-
-    lkRoom = new Room({ adaptiveStream: true });
-    await lkRoom.connect(tk.url, tk.token);
-
-    const player = document.getElementById('player');
-    lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === 'video') track.attach(player);
-      if (track.kind === 'audio') track.attach(player);
-    });
-
-    document.getElementById('fsBtn')?.addEventListener('click', async () => {
-      if (document.fullscreenElement) document.exitFullscreen();
-      else player.requestFullscreen?.();
-    });
-  } catch (e) {
-    console.error('watch start error:', e);
-    alert('تعذر فتح البث: ' + (e.message || e));
-  }
+  document.getElementById('fsBtn').addEventListener('click', async () => {
+    const elem = player;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (elem.requestFullscreen) elem.requestFullscreen();
+  });
 }
 start();

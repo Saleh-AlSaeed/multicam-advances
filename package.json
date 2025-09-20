@@ -6,14 +6,18 @@
   "scripts": {
     "dev": "node server.js",
     "start": "NODE_ENV=production node server.js",
-    "postinstall": "mkdir -p public/vendor && (curl -fsSL https://unpkg.com/@livekit/client@2.15.7/dist/livekit-client.umd.min.js -o public/vendor/livekit-client.umd.min.js || curl -fsSL https://raw.githubusercontent.com/livekit/client-sdk-js/v2.15.7/dist/livekit-client.umd.min.js -o public/vendor/livekit-client.umd.min.js || wget -qO public/vendor/livekit-client.umd.min.js https://unpkg.com/@livekit/client@2.15.7/dist/livekit-client.umd.min.js || wget -qO public/vendor/livekit-client.umd.min.js https://raw.githubusercontent.com/livekit/client-sdk-js/v2.15.7/dist/livekit-client.umd.min.js)"
+    "postinstall": "mkdir -p public/vendor && cp ./node_modules/@livekit/client/dist/livekit-client.umd.min.js ./public/vendor/livekit-client.umd.min.js"
   },
   "dependencies": {
+    "@livekit/client": "^2.15.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "livekit-server-sdk": "^2.5.3",
     "morgan": "^1.10.0",
     "uuid": "^9.0.1"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

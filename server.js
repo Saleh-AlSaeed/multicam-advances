@@ -11,6 +11,9 @@ import { AccessToken } from 'livekit-server-sdk';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// انتبه: مجلد public موجود بجذر المشروع (وليس داخل src)
+const ROOT_DIR = path.join(__dirname, '..');
+
 const app = express();
 app.use(express.json());
 app.use(morgan('dev'));
@@ -23,10 +26,10 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H
 const PORT = process.env.PORT || 8080;
 
 // ---------- STATIC ----------
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(ROOT_DIR, 'public')));
 
-// ✅ نخدم UMD من node_modules مباشرة بدون أي طلب خارجي
-const UMD_PATH = path.join(__dirname, 'node_modules', '@livekit', 'client', 'dist', 'livekit-client.umd.min.js');
+// ✅ نخدم UMD من node_modules مباشرة بدون CDN
+const UMD_PATH = path.join(ROOT_DIR, 'node_modules', '@livekit', 'client', 'dist', 'livekit-client.umd.min.js');
 app.get('/vendor/livekit-client.umd.min.js', (req, res) => {
   try {
     if (fs.existsSync(UMD_PATH)) {
@@ -60,7 +63,7 @@ const USERS = {
 const sessions = new Map(); // token -> { username, role, room, createdAt }
 
 // ---------- Persistence for watch sessions ----------
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = path.join(ROOT_DIR, 'data');
 const WATCH_FILE = path.join(DATA_DIR, 'watchSessions.json');
 
 function loadWatchSessions() {
@@ -195,13 +198,14 @@ app.get('/api/watch/:id', authMiddleware(), (req, res) => {
   res.json(item);
 });
 
+// Root
 app.get('/', (_, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(ROOT_DIR, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  if (LIVEKIT_URL.includes('wss://multicam-national-day-htyhphzo.livekit.cloud')) {
+  if (LIVEKIT_URL.includes('REPLACE_ME')) {
     console.log('⚠️  Please set LIVEKIT_URL in .env');
   }
 });

@@ -1,5 +1,14 @@
 // ===== لوحة المشرف =====
+function init() {
+  const s = requireAuth();
+  if (!s || s.role !== 'admin') { location.href = '/'; return; }
 
+  // حماية: نتأكد أن livekit موجودة
+  if (!window.livekit || !window.livekit.Room) {
+    console.error('LiveKit client did not load');
+    alert('LiveKit client did not load');
+    return;
+  }
 const CITIES = [
   { label: 'مدينة رقم1', room: 'city-1' },
   { label: 'مدينة رقم2', room: 'city-2' },
@@ -206,8 +215,9 @@ async function createWatch() {
   if (selection.length === 0) return alert('اختر عدد الكاميرات');
   const rec = await API.createWatch(selection);
   composite = rec; currentSelection = selection;
-  document.getElementById('goWatchBtn').disabled = false;
-  document.getElementById('stopBtn').disabled = false;
+    document.getElementById('viewModeBtn')?.addEventListener('click', ()=>{ document.getElementById('viewModal')?.classList.add('open'); });
+  document.getElementById('closeModalBtn')?.addEventListener('click', ()=>{ document.getElementById('viewModal')?.classList.remove('open'); });
+})();
   closeViewModal(); await startComposer(rec);
   alert('تم إنشاء غرفة المشاهدة: ' + rec.roomName);
 }

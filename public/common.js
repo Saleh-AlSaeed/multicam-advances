@@ -1,4 +1,3 @@
-// API helpers
 const API = {
   async _request(path, opts = {}) {
     const r = await fetch(path, opts);
@@ -12,9 +11,7 @@ const API = {
     return data;
   },
 
-  async getConfig() {
-    return this._request('/api/config');
-  },
+  async getConfig() { return this._request('/api/config'); },
 
   async login(username, password) {
     const data = await this._request('/api/login', {
@@ -43,7 +40,7 @@ const API = {
       localStorage.removeItem('session');
     }
   },
-<script src="/vendor/livekit-client.umd.min.js"></script>
+
   async token(roomName, identity, publish=false, subscribe=true) {
     const s = API.session();
     return this._request('/api/token', {
@@ -56,7 +53,6 @@ const API = {
     });
   },
 
-  // (المشاهد/المشرف) كما لديك سابقاً — أبقيتها إن كنت تحتاجها لاحقاً
   async createWatch(selection) {
     const s = API.session();
     return this._request('/api/create-watch', {
@@ -65,12 +61,14 @@ const API = {
       body: JSON.stringify({ selection })
     });
   },
+
   async getActiveWatch() {
     const s = API.session();
     return this._request('/api/watch/active', {
       headers: { 'Authorization': 'Bearer ' + s.token }
     });
   },
+
   async getWatch(id) {
     const s = API.session();
     return this._request('/api/watch/' + id, {
@@ -79,7 +77,6 @@ const API = {
   }
 };
 
-// Navigation helpers
 function goTo(role, room) {
   if (role === 'admin') location.href = '/admin.html';
   else if (role === 'city') location.href = `/city.html?room=${encodeURIComponent(room || 'city-1')}`;
@@ -92,14 +89,12 @@ function requireAuth() {
   return s;
 }
 
-// زر خروج موحد يعمل دائماً
 function logoutBtnHandler(btn) {
   btn?.addEventListener('click', async () => {
     try { await API.logout(); } finally { location.href = '/'; }
   });
 }
 
-// صغيرة مساعدة
 function qs(k, def='') {
   const u = new URL(location.href);
   return u.searchParams.get(k) ?? def;

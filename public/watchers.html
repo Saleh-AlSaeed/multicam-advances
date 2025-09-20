@@ -14,6 +14,7 @@
         <button id="logoutBtn" class="btn danger">خروج</button>
       </div>
     </header>
+
     <div class="container">
       <div class="card">
         <h3>البث المتاح</h3>
@@ -21,19 +22,30 @@
       </div>
     </div>
 
-    <!-- LiveKit UMD: CDN ثم fallback محلي -->
-    <script src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
-    <script> if (!window.livekit) { document.write('<script src="/vendor/livekit-client.umd.min.js"><\\/script>'); } </script>
+    <!-- مُحمِّل LiveKit (يحاول: ملف vendor محلي ثم CDN تلقائيًا) -->
+    <script src="/livekit-loader.js" defer></script>
 
     <script src="/common.js"></script>
     <script>
-      (async function() {
+      (async function () {
         const s = requireAuth();
         if (!s || s.role !== 'watcher') { location.href = '/'; return; }
-        logoutBtnHandler(document.getElementById('logoutBtn'));
+
+        // زر الخروج من common.js
+        const btn = document.getElementById('logoutBtn');
+        if (btn) {
+          btn.onclick = async (e) => {
+            e.preventDefault();
+            try { await API.logout(); } catch (_) {}
+            try { localStorage.removeItem('session'); } catch (_) {}
+            location.replace('/');
+          };
+        }
+
         const data = await API.getActiveWatch();
         const status = document.getElementById('status');
         const nowBtn = document.getElementById('nowBtn');
+
         if (!data) {
           status.textContent = 'لا يوجد بث نشط حاليًا.';
         } else {

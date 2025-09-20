@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="ar" class="rtl">
   <head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>المشاهدون</title>
-    <link rel="stylesheet" href="/styles.css"/>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="topbar">
@@ -20,11 +20,17 @@
         <div id="status" class="small">جاري التحضير...</div>
       </div>
     </div>
+
+    <!-- LiveKit UMD: CDN ثم fallback محلي -->
+    <script src="https://cdn.jsdelivr.net/npm/@livekit/client@2.3.0/dist/livekit-client.umd.min.js"></script>
+    <script> if (!window.livekit) { document.write('<script src="/vendor/livekit-client.umd.min.js"><\\/script>'); } </script>
+
     <script src="/common.js"></script>
     <script>
       (async function() {
         const s = requireAuth();
         if (!s || s.role !== 'watcher') { location.href = '/'; return; }
+        logoutBtnHandler(document.getElementById('logoutBtn'));
         const data = await API.getActiveWatch();
         const status = document.getElementById('status');
         const nowBtn = document.getElementById('nowBtn');

@@ -98,7 +98,7 @@ async function leave() {
 
 (function init() {
   ensureAuthCity();
-  // زر الخروج يُربط تلقائياً أيضاً من common.js، لكن نزيد الأمان:
+  // زر الخروج أيضاً مربوط من common.js — هذا احتياط إضافي:
   const lo = document.getElementById('logoutBtn'); if (lo) lo.addEventListener('click', (e)=>{ e.preventDefault(); }, { passive:false });
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {

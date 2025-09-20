@@ -19,6 +19,9 @@ app.get('/vendor/livekit-client.umd.min.js', (req, res, next) => {
   res.set('Expires', '0');
   next();
 });
+
+// خدم مجلد public
+app.use(express.static(path.join(__dirname, 'public')));
 const app = express();
 app.use(express.json());
 app.use(morgan('dev'));

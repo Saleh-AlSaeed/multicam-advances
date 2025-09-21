@@ -5,31 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>المشاهدة</title>
     <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .overlay {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: rgba(0,0,0,.35); color: #fff; font-weight: 700;
+        visibility: hidden;
+      }
+      .overlay.show { visibility: visible; }
+      .controls-bar {
+        position: absolute; right: 12px; bottom: 12px; display: flex; gap: 8px; z-index: 5;
+      }
+    </style>
   </head>
   <body>
     <header class="topbar">
       <div>📺 غرفة المشاهدة</div>
       <div class="toolbar">
-        <button id="fsBtn" class="btn fullscreen-btn">ملء الشاشة</button>
         <button id="logoutBtn" class="btn danger">خروج</button>
       </div>
     </header>
-    <div class="video-grid cols-1">
-      <div class="video-tile">
-        <video id="player" autoplay playsinline controls></video>
+
+    <div class="video-grid cols-1" style="position:relative">
+      <div class="video-tile" style="position:relative">
+        <video id="player" autoplay playsinline muted controls></video>
         <div class="label">البث</div>
+        <div class="controls-bar">
+          <button id="playBtn" class="btn success">تشغيل/إلغاء كتم</button>
+          <button id="fsBtn" class="btn">ملء الشاشة</button>
+        </div>
+        <div id="overlay" class="overlay">اضغط "تشغيل" لبدء البث</div>
       </div>
     </div>
 
-    <!-- تحميل LiveKit UMD محلي فقط -->
+    <!-- UMD محلي حسب ما اعتمدنا عليه بالمشروع -->
     <script src="/vendor/livekit-client.umd.js"></script>
-    <script>
-    window.livekit =
-    window.livekit ||
-    window.LivekitClient ||   // بعض الإصدارات تستخدم هذا
-    window.LiveKit ||         // احتياط لأسماء قديمة
-    window.lk || null;
-    </script>
+
     <script src="/common.js"></script>
     <script src="/watch.js"></script>
   </body>

@@ -35,15 +35,18 @@
         <div class="small">الحالة: <span id="status">بانتظار الإذن…</span></div>
         <hr/>
         <div class="video-grid cols-1">
-          <div class="video-tile"><video id="preview" autoplay playsinline muted></video><div class="label">المعاينة</div></div>
+          <div class="video-tile">
+            <video id="preview" autoplay playsinline muted></video>
+            <div class="label">المعاينة</div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- نحمل UMD من السيرفر المحلي فقط -->
-   <script src="/livekit-loader.js" defer></script>
+    <!-- LiveKit UMD محلي فقط -->
+    <script src="/vendor/livekit-client.umd.min.js"></script>
 
-<script src="/common.js"></script>
-<script src="/city.js"></script>
-</body>
+    <script src="/common.js"></script>
+    <script src="/city.js"></script>
+  </body>
 </html>

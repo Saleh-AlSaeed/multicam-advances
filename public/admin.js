@@ -84,7 +84,6 @@ function readSelectionFromUI() {
   }));
 }
 
-// اتصال غرف المعاينة (Subscribe فقط)
 async function connectCityPreviews() {
   ensureAuth();
   const lk = await ensureLivekit();
@@ -97,6 +96,33 @@ async function connectCityPreviews() {
   grid.innerHTML = '';
   cityRooms = [];
 
+  // دالة مساعدة لربط/فصل الفيديو + مقياس الصوت
+  function attachVideo(track, videoEl) {
+    try { track.attach(videoEl); } catch (_) {}
+  }
+  function detachVideo(track, videoEl) {
+    try { track.detach(videoEl); } catch (_) {}
+    try { videoEl.srcObject = null; } catch (_) {}
+  }
+  function wireAudioMeter(track, meterFill) {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = audioCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const loop = () => {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0; for (let i = 0; i < data.length; i++) { const v = (data[i]-128)/128; sum += v*v; }
+        const rms = Math.sqrt(sum / data.length);
+        meterFill.style.width = Math.min(100, Math.max(0, Math.round(rms * 200))) + '%';
+        requestAnimationFrame(loop);
+      };
+      loop();
+    } catch (_) {}
+  }
+
   for (const item of CITIES) {
     const id = 'tile-' + item.room;
     const tile = document.createElement('div');
@@ -107,34 +133,49 @@ async function connectCityPreviews() {
       <div class="label">${item.label}</div>`;
     grid.appendChild(tile);
 
-    const lkRoom = new Room({ adaptiveStream: true, dynacast: true });
+    const videoEl   = tile.querySelector('video');
+    const meterFill = tile.querySelector('.meter > i');
+
+    const lkRoom = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+      // autoSubscribe عادة true، لكن نبقيه true صراحةً
+      autoSubscribe: true,
+    });
+
+    // احصل على توكن اشتراك فقط
     const identity = `admin-preview-${item.room}`;
     const tk = await API.token(item.room, identity, false, true);
     await lkRoom.connect(tk.url, tk.token);
 
-    const videoEl = tile.querySelector('video');
-    const meterFill = tile.querySelector('.meter > i');
+    // عند وصول track جديد مشترك
+    lkRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      if (track.kind === 'video') attachVideo(track, videoEl);
+      if (track.kind === 'audio') wireAudioMeter(track, meterFill);
+    });
 
-    lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === 'video') track.attach(videoEl);
-      if (track.kind === 'audio') {
+    // لو أُلغي الاشتراك (أو توقف التراك)
+    lkRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+      if (track.kind === 'video') detachVideo(track, videoEl);
+    });
+
+    // بعض السيرفرات لا تفعل autoSubscribe لكل publication،
+    // لذلك نجبر الاشتراك عند الإعلان عن تراك جديد:
+    lkRoom.on(RoomEvent.TrackPublished, async (publication, participant) => {
+      try { await publication.setSubscribed(true); } catch (_) {}
+    });
+
+    // اشترك فورًا في أي publications موجودة لحظة الاتصال
+    lkRoom.remoteParticipants.forEach(p => {
+      p.trackPublications.forEach(async pub => {
         try {
-          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-          const src = audioCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
-          const analyser = audioCtx.createAnalyser();
-          analyser.fftSize = 256;
-          src.connect(analyser);
-          const data = new Uint8Array(analyser.frequencyBinCount);
-          const loop = () => {
-            analyser.getByteTimeDomainData(data);
-            let sum = 0; for (let i = 0; i < data.length; i++) { const v = (data[i]-128)/128; sum += v*v; }
-            const rms = Math.sqrt(sum / data.length);
-            meterFill.style.width = Math.min(100, Math.max(0, Math.round(rms * 200))) + '%';
-            requestAnimationFrame(loop);
-          };
-          loop();
+          if (!pub.isSubscribed) await pub.setSubscribed(true);
+          if (pub.track) {
+            if (pub.kind === 'video') attachVideo(pub.track, videoEl);
+            if (pub.kind === 'audio') wireAudioMeter(pub.track, meterFill);
+          }
         } catch (_) {}
-      }
+      });
     });
 
     cityRooms.push({ ...item, lkRoom, tileEl: tile, videoEl, meterEl: meterFill });

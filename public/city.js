@@ -6,11 +6,24 @@ let hasPermission = false;
 
 // انتظار توفر window.livekit (الـ UMD) قبل أي استخدام
 async function ensureLivekit(timeoutMs = 15000) {
-  if (window.livekit) return window.livekit;
+  // جرّب الأسماء المحتملة ووحّدها
+  const normalize = () => {
+    const g =
+      window.livekit ||
+      window.LivekitClient ||
+      window.LiveKit ||
+      window.lk ||
+      null;
+    if (g && !window.livekit) window.livekit = g;
+    return !!window.livekit;
+  };
+
+  if (normalize()) return window.livekit;
+
   const start = Date.now();
   return new Promise((resolve, reject) => {
     const t = setInterval(() => {
-      if (window.livekit) {
+      if (normalize()) {
         clearInterval(t);
         resolve(window.livekit);
       } else if (Date.now() - start > timeoutMs) {

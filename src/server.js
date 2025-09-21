@@ -11,7 +11,7 @@ import { AccessToken } from 'livekit-server-sdk';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// public موجود بجذر المشروع (فوق src)
+// public موجود في جذر المشروع (فوق src)
 const ROOT_DIR = path.join(__dirname, '..');
 
 const app = express();
@@ -20,35 +20,15 @@ app.use(morgan('dev'));
 app.use(cors());
 
 // ---------- ENV ----------
-const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
+const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://REPLACE_ME.livekit.cloud';
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
 const PORT = process.env.PORT || 8080;
-
-// ---------- LiveKit UMD (محلي فقط) ----------
-const UMD_PATH = path.join(ROOT_DIR, 'node_modules', '@livekit', 'client', 'dist', 'livekit-client.umd.min.js');
-
-// تعطيل الكاش على ملف UMD تحديدًا
-app.get('/vendor/livekit-client.umd.min.js', (req, res) => {
-  try {
-    if (!fs.existsSync(UMD_PATH)) {
-      res.status(500).type('application/javascript').send('// LiveKit UMD not found in node_modules.');
-      return;
-    }
-    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.set('Pragma', 'no-cache');
-    res.set('Expires', '0');
-    res.type('application/javascript; charset=utf-8');
-    res.sendFile(UMD_PATH);
-  } catch (e) {
-    res.status(500).type('application/javascript').send('// Failed to serve LiveKit UMD.');
-  }
-});
 
 // ---------- STATIC ----------
 app.use(express.static(path.join(ROOT_DIR, 'public')));
 
-// ---------- In-memory users ----------
+// ---------- In-memory stores ----------
 const USERS = {
   "admin": { password: "admin123", role: "admin" },
   "مدينة رقم1": { password: "City1", role: "city", room: "city-1" },
@@ -56,7 +36,7 @@ const USERS = {
   "مدينة رقم3": { password: "City3", role: "city", room: "city-3" },
   "مدينة رقم4": { password: "City4", role: "city", room: "city-4" },
   "مدينة رقم5": { password: "City5", role: "city", room: "city-5" },
-  "مدينة رقم6": { password: "City5", role: "city", room: "city-6" },
+  "مدينة رقم6": { password: "City6", role: "city", room: "city-6" },
   "مشاهد1": { password: "Watch1", role: "watcher" },
   "مشاهد2": { password: "Watch2", role: "watcher" },
   "مشاهد3": { password: "Watch3", role: "watcher" },
@@ -75,8 +55,7 @@ function loadWatchSessions() {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
     if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
-    const txt = fs.readFileSync(WATCH_FILE, 'utf-8');
-    return JSON.parse(txt);
+    return JSON.parse(fs.readFileSync(WATCH_FILE, 'utf-8'));
   } catch (e) {
     console.error('Failed to load watch sessions:', e);
     return [];
@@ -105,12 +84,18 @@ function authMiddleware(required = null) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     next();
-  }
+  };
 }
 
 async function buildToken({ identity, roomName, canPublish = false, canSubscribe = true, metadata = '{}' }) {
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { identity, metadata });
-  at.addGrant({ roomJoin: true, room: roomName, canPublish, canSubscribe, canPublishData: true });
+  at.addGrant({
+    roomJoin: true,
+    room: roomName,
+    canPublish,
+    canSubscribe,
+    canPublishData: true,
+  });
   at.ttl = 60 * 60 * 4;
   return await at.toJwt();
 }
@@ -144,8 +129,10 @@ app.post('/api/token', authMiddleware(), async (req, res) => {
   }
   try {
     const jwt = await buildToken({
-      identity, roomName,
-      canPublish: !!publish, canSubscribe: !!subscribe,
+      identity,
+      roomName,
+      canPublish: !!publish,
+      canSubscribe: !!subscribe,
       metadata: JSON.stringify({ by: req.user.username, role: req.user.role })
     });
     res.json({ token: jwt, url: LIVEKIT_URL });
@@ -162,7 +149,7 @@ app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
     return res.status(400).json({ error: 'selection must be 1..6 entries' });
   }
   const id = uuidv4();
-  const roomName = `watch-${id.slice(0,8)}`;
+  const roomName = `watch-${id.slice(0, 8)}`;
   watchSessions = (watchSessions || []).map(w => ({ ...w, active: false }));
   const record = { id, roomName, selection, createdAt: Date.now(), active: true };
   watchSessions.push(record);
@@ -210,7 +197,7 @@ app.get('/', (_, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  if (LIVEKIT_URL.includes('wss://multicam-national-day-htyhphzo.livekit.cloud')) {
-    console.log('⚠️  Please set LIVEKIT_URL in .env');
+  if (LIVEKIT_URL.includes('REPLACE_ME')) {
+    console.log('⚠️  Please set LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET in .env');
   }
 });

@@ -1,6 +1,6 @@
-// ===== لوحة المشرف =====
+// ===== لوحة المشرف (Admin) =====
 
-// مدن النظام
+// مستخدمو المدن (6)
 const CITIES = [
   { label: 'مدينة رقم1', room: 'city-1' },
   { label: 'مدينة رقم2', room: 'city-2' },
@@ -11,12 +11,12 @@ const CITIES = [
 ];
 
 let livekitUrl = null;
-let cityRooms = [];     // [{room, lkRoom, tileEl, videoEl, meterEl}]
-let composer = null;    // { room, stop() }
-let composite = null;   // سجل جلسة المشاهدة {id, roomName, selection,...}
+let cityRooms = [];
+let composer = null;     // بث المكس
+let composite = null;    // سجل جلسة المشاهدة النشطة (إن وجد)
 let currentSelection = [];
 
-// انتظر تحميل UMD
+// نتأكد من تحميل UMD (window.livekit)
 async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
   const started = Date.now();
@@ -34,19 +34,109 @@ function ensureAuth() {
   return s;
 }
 
-function layoutRects(n, W, H) {
-  const rects = [];
-  if (n === 1) rects.push({ x: 0, y: 0, w: W, h: H });
-  else if (n === 2) { const w=W/2,h=H; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h}); }
-  else if (n === 3) { const w=W/3,h=H; for (let i=0;i<3;i++) rects.push({x:i*w,y:0,w,h}); }
-  else if (n === 4) { const w=W/2,h=H/2; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h}); }
-  else if (n === 5) { const w=W/3,h=H/2; let i=0; for (let r=0;r<2;r++) for (let c=0;c<3;c++){ if(i<5) rects.push({x:c*w,y:r*h,w,h}); i++; } }
-  else if (n === 6) { const w=W/3,h=H/2; for (let r=0;r<2;r++) for (let c=0;c<3;c++) rects.push({x:c*w,y:r*h,w,h}); }
-  return rects;
+// عداد صوت بسيط لمسار Audio
+function attachAudioMeter(track, meterFillEl) {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audioCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    src.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    (function loop(){
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      meterFillEl.style.width = Math.min(100, Math.max(0, Math.round(rms * 200))) + '%';
+      requestAnimationFrame(loop);
+    })();
+  } catch {}
 }
 
-function openViewModal(){ document.getElementById('viewModal').classList.add('open'); renderSlots(); }
-function closeViewModal(){ document.getElementById('viewModal').classList.remove('open'); }
+// الاتصال بكل غرف المدن للاطّلاع على المعاينة (Targeted Subscribe)
+async function connectCityPreviews() {
+  ensureAuth();
+  const lk = await ensureLivekit();
+  const { Room, RoomEvent, Track } = lk;
+
+  const cfg = await API.getConfig();
+  livekitUrl = cfg.LIVEKIT_URL;
+
+  const grid = document.getElementById('previewGrid');
+  grid.innerHTML = '';
+  cityRooms = [];
+
+  for (const item of CITIES) {
+    const id = 'tile-' + item.room;
+    const tile = document.createElement('div');
+    tile.className = 'video-tile';
+    tile.innerHTML = `
+      <div class="meter"><i></i></div>
+      <video id="${id}" autoplay playsinline muted></video>
+      <div class="label">${item.label}</div>
+    `;
+    grid.appendChild(tile);
+
+    const videoEl = tile.querySelector('video');
+    const meterEl = tile.querySelector('.meter > i');
+
+    // autoSubscribe=false ثم نشترك يدويًا في كل TrackPublication
+    const lkRoom = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+      autoSubscribe: false,
+    });
+
+    // توكن مشاهدة فقط لغرفة المدينة
+    const identity = `admin-preview-${item.room}`;
+    const tk = await API.token(item.room, identity, false, true);
+    await lkRoom.connect(tk.url, tk.token);
+
+    // حين تتم عملية الاشتراك الفعلية، نربط الفيديو/العداد
+    lkRoom.on(RoomEvent.TrackSubscribed, (track /* Track */, pub, participant) => {
+      try {
+        if (track.kind === Track.Kind.Video) {
+          track.attach(videoEl);
+        } else if (track.kind === Track.Kind.Audio) {
+          attachAudioMeter(track, meterEl);
+        }
+      } catch {}
+    });
+
+    // اشترك في جميع المنشورات لحظياً وللمستقبل
+    const subscribeAllFor = (p) => {
+      // الموجود حالياً
+      p.trackPublications?.forEach(async (pub) => {
+        try { await pub.setSubscribed(true); } catch {}
+      });
+      // وما سيُنشر لاحقاً
+      p.on(lk.ParticipantEvent.TrackPublished, async (pub) => {
+        try { await pub.setSubscribed(true); } catch {}
+      });
+    };
+
+    // المشاركون الحاليون
+    lkRoom.remoteParticipants?.forEach((p) => subscribeAllFor(p));
+    // المشاركون الجدد
+    lkRoom.on(RoomEvent.ParticipantConnected, (p) => subscribeAllFor(p));
+
+    cityRooms.push({ ...item, lkRoom, tileEl: tile, videoEl, meterEl });
+  }
+}
+
+// =============== واجهة اختيار المشاهدة وإنشاء جلسة Watch ===============
+
+function openViewModal() {
+  document.getElementById('viewModal')?.classList.add('open');
+  renderSlots();
+}
+function closeViewModal() {
+  document.getElementById('viewModal')?.classList.remove('open');
+}
 
 function renderSlots() {
   const n = parseInt(document.getElementById('camCount').value, 10);
@@ -80,109 +170,23 @@ function readSelectionFromUI() {
   return slots.map(el => ({
     room: el.querySelector('.userSel').value,
     video: el.querySelector('.optVideo').checked,
-    audio: el.querySelector('.optAudio').checked
+    audio: el.querySelector('.optAudio').checked,
   }));
 }
 
-async function connectCityPreviews() {
-  ensureAuth();
-  const lk = await ensureLivekit();
-  const { Room, RoomEvent } = lk;
-
-  const cfg = await API.getConfig();
-  livekitUrl = cfg.LIVEKIT_URL;
-
-  const grid = document.getElementById('previewGrid');
-  grid.innerHTML = '';
-  cityRooms = [];
-
-  // دالة مساعدة لربط/فصل الفيديو + مقياس الصوت
-  function attachVideo(track, videoEl) {
-    try { track.attach(videoEl); } catch (_) {}
-  }
-  function detachVideo(track, videoEl) {
-    try { track.detach(videoEl); } catch (_) {}
-    try { videoEl.srcObject = null; } catch (_) {}
-  }
-  function wireAudioMeter(track, meterFill) {
-    try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = audioCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      src.connect(analyser);
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      const loop = () => {
-        analyser.getByteTimeDomainData(data);
-        let sum = 0; for (let i = 0; i < data.length; i++) { const v = (data[i]-128)/128; sum += v*v; }
-        const rms = Math.sqrt(sum / data.length);
-        meterFill.style.width = Math.min(100, Math.max(0, Math.round(rms * 200))) + '%';
-        requestAnimationFrame(loop);
-      };
-      loop();
-    } catch (_) {}
-  }
-
-  for (const item of CITIES) {
-    const id = 'tile-' + item.room;
-    const tile = document.createElement('div');
-    tile.className = 'video-tile';
-    tile.innerHTML = `
-      <div class="meter"><i></i></div>
-      <video id="${id}" autoplay playsinline muted></video>
-      <div class="label">${item.label}</div>`;
-    grid.appendChild(tile);
-
-    const videoEl   = tile.querySelector('video');
-    const meterFill = tile.querySelector('.meter > i');
-
-    const lkRoom = new Room({
-      adaptiveStream: true,
-      dynacast: true,
-      // autoSubscribe عادة true، لكن نبقيه true صراحةً
-      autoSubscribe: true,
-    });
-
-    // احصل على توكن اشتراك فقط
-    const identity = `admin-preview-${item.room}`;
-    const tk = await API.token(item.room, identity, false, true);
-    await lkRoom.connect(tk.url, tk.token);
-
-    // عند وصول track جديد مشترك
-    lkRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-      if (track.kind === 'video') attachVideo(track, videoEl);
-      if (track.kind === 'audio') wireAudioMeter(track, meterFill);
-    });
-
-    // لو أُلغي الاشتراك (أو توقف التراك)
-    lkRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-      if (track.kind === 'video') detachVideo(track, videoEl);
-    });
-
-    // بعض السيرفرات لا تفعل autoSubscribe لكل publication،
-    // لذلك نجبر الاشتراك عند الإعلان عن تراك جديد:
-    lkRoom.on(RoomEvent.TrackPublished, async (publication, participant) => {
-      try { await publication.setSubscribed(true); } catch (_) {}
-    });
-
-    // اشترك فورًا في أي publications موجودة لحظة الاتصال
-    lkRoom.remoteParticipants.forEach(p => {
-      p.trackPublications.forEach(async pub => {
-        try {
-          if (!pub.isSubscribed) await pub.setSubscribed(true);
-          if (pub.track) {
-            if (pub.kind === 'video') attachVideo(pub.track, videoEl);
-            if (pub.kind === 'audio') wireAudioMeter(pub.track, meterFill);
-          }
-        } catch (_) {}
-      });
-    });
-
-    cityRooms.push({ ...item, lkRoom, tileEl: tile, videoEl, meterEl: meterFill });
-  }
+// تخطيط مربعات المكس على الـ canvas
+function layoutRects(n, W, H) {
+  const rects = [];
+  if (n === 1) rects.push({ x: 0, y: 0, w: W, h: H });
+  else if (n === 2) { const w=W/2,h=H; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h}); }
+  else if (n === 3) { const w=W/3,h=H; for (let i=0;i<3;i++) rects.push({x:i*w,y:0,w,h}); }
+  else if (n === 4) { const w=W/2,h=H/2; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h}); }
+  else if (n === 5) { const w=W/3,h=H/2; let i=0; for (let r=0;r<2;r++) for (let c=0;c<3;c++){ if(i<5) rects.push({x:c*w,y:r*h,w,h}); i++; } }
+  else if (n === 6) { const w=W/3,h=H/2; for (let r=0;r<2;r++) for (let c=0;c<3;c++) rects.push({x:c*w,y:r*h,w,h}); }
+  return rects;
 }
 
-// مكس الفيديو والصوت ونشره في غرفة المشاهدة
+// بدء مكس الفيديو/الصوت ونشره في غرفة المشاهدة
 async function startComposer(rec) {
   const lk = await ensureLivekit();
   const { Room, LocalVideoTrack, LocalAudioTrack } = lk;
@@ -196,34 +200,37 @@ async function startComposer(rec) {
   const tk = await API.token(rec.roomName, `admin-composer-${s.username}`, true, false);
   await room.connect(tk.url, tk.token);
 
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const dest = audioCtx.createMediaStreamDestination();
-
+  // جمع الفيديوهات المختارة من مربعات المعاينة
   const videos = [];
   for (const sel of rec.selection) {
-    const vidEl = document.getElementById('tile-' + sel.room);
-    videos.push(sel.video ? vidEl : null);
-    if (sel.audio) {
-      const city = cityRooms.find(c => c.room === sel.room);
-      if (city) {
-        city.lkRoom?.remoteParticipants?.forEach?.(p => {
-          // بعض إصدارات LiveKit لا توفّر p.audioTracks كـ Array مباشرة
-          const pubs = (p.audioTracks && Array.from(p.audioTracks.values ? p.audioTracks.values() : p.audioTracks)) || [];
-          pubs.forEach(pub => {
-            if (pub.track) {
-              const src = audioCtx.createMediaStreamSource(new MediaStream([pub.track.mediaStreamTrack]));
-              src.connect(dest);
-            }
-          });
-        });
-      }
-    }
+    const city = cityRooms.find(c => c.room === sel.room);
+    videos.push(sel.video && city ? city.videoEl : null);
   }
 
+  // خلط الصوت من غرف المدن وفق الاختيارات
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const dest = audioCtx.createMediaStreamDestination();
+  for (const sel of rec.selection) {
+    if (!sel.audio) continue;
+    const city = cityRooms.find(c => c.room === sel.room);
+    try {
+      city?.lkRoom?.remoteParticipants?.forEach(p => {
+        p?.audioTracks?.forEach(pub => {
+          if (pub.track && pub.track.mediaStreamTrack) {
+            const s = audioCtx.createMediaStreamSource(new MediaStream([pub.track.mediaStreamTrack]));
+            s.connect(dest);
+          }
+        });
+      });
+    } catch {}
+  }
+
+  // نشر فيديو المكس
   const vTrack = canvas.captureStream(30).getVideoTracks()[0];
   const localV = new LocalVideoTrack(vTrack);
   await room.localParticipant.publishTrack(localV, { name: 'composite' });
 
+  // نشر الصوت المختلط (إن وُجد)
   const aTrack = dest.stream.getAudioTracks()[0];
   if (aTrack) {
     const localA = new LocalAudioTrack(aTrack);
@@ -249,22 +256,26 @@ async function startComposer(rec) {
   };
 }
 
-async function stopComposer(){ if (composer?.stop) { await composer.stop(); composer = null; } }
-async function restartComposer(rec, selection){ await stopComposer(); await startComposer({ ...rec, selection }); }
+async function stopComposer() { if (composer?.stop) { await composer.stop(); composer = null; } }
+async function restartComposer(rec, selection) { await stopComposer(); await startComposer({ ...rec, selection }); }
 
 async function createWatch() {
   const selection = readSelectionFromUI();
   if (selection.length === 0) return alert('اختر عدد الكاميرات');
   const rec = await API.createWatch(selection);
-  composite = rec; currentSelection = selection;
+  composite = rec;
+  currentSelection = selection;
   closeViewModal();
   await startComposer(rec);
+  document.getElementById('stopBtn').disabled = false;
+  document.getElementById('goWatchBtn').disabled = false;
   alert('تم إنشاء غرفة المشاهدة: ' + rec.roomName);
 }
 
 async function applyChanges() {
   if (!composite) return openViewModal();
-  const selection = readSelectionFromUI(); currentSelection = selection;
+  const selection = readSelectionFromUI();
+  currentSelection = selection;
   await fetch(`/api/watch/${composite.id}`, {
     method: 'PUT',
     headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+API.session().token },
@@ -276,15 +287,21 @@ async function applyChanges() {
 
 async function stopBroadcast() {
   if (!composite) return;
-  await fetch(`/api/watch/${composite.id}/stop`, { method: 'POST', headers: { 'Authorization':'Bearer '+API.session().token }});
+  await fetch(`/api/watch/${composite.id}/stop`, {
+    method: 'POST',
+    headers: { 'Authorization':'Bearer '+API.session().token }
+  });
   await stopComposer();
   document.getElementById('stopBtn').disabled = true;
   alert('تم إيقاف البث.');
 }
 
-function openWatchWindow(){ if(!composite) return alert('أنشئ جلسة مشاهدة أولاً'); window.open(`/watch.html?id=${composite.id}`, '_blank'); }
+function openWatchWindow() {
+  if (!composite) return alert('أنشئ جلسة مشاهدة أولاً');
+  window.open(`/watch.html?id=${composite.id}`, '_blank');
+}
 
-// ربط الواجهة
+// ربط الأزرار
 function setupUI() {
   document.getElementById('viewModeBtn').addEventListener('click', openViewModal);
   document.getElementById('closeModalBtn').addEventListener('click', closeViewModal);
@@ -293,18 +310,14 @@ function setupUI() {
   document.getElementById('goWatchBtn').addEventListener('click', openWatchWindow);
   document.getElementById('applyBtn').addEventListener('click', applyChanges);
   document.getElementById('stopBtn').addEventListener('click', stopBroadcast);
+  // زر الخروج من common.js
   attachLogout(document.getElementById('logoutBtn'));
 }
 
-// ===== التشغيل (بدون await على المستوى الأعلى) =====
-(async function initAdmin(){
-  try {
-    ensureAuth();
-    setupUI();
-    renderSlots();
-    await connectCityPreviews();
-  } catch (e) {
-    console.error('[admin] init error:', e);
-    alert('تعذّر تهيئة لوحة المشرف: ' + (e?.message || e));
-  }
+// تشغيل الصفحة
+(async function init(){
+  ensureAuth();
+  setupUI();
+  renderSlots();
+  await connectCityPreviews();
 })();

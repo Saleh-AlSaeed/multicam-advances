@@ -53,14 +53,8 @@
       </div>
     </div>
 
-    <!-- تحميل نسخة UMD المحلية فقط -->
+    <!-- تحميل LiveKit UMD محلي فقط -->
     <script src="/vendor/livekit-client.umd.js"></script>
-    <script>
-      // تحقّق مبكّر: يجب أن يعرِّف ملف UMD الكائن window.livekit
-      if (!window.livekit) {
-        alert('LiveKit UMD لم يُحمّل. تأكّد أن الملف موجود في /public/vendor/livekit-client.umd.js');
-      }
-    </script>
 
     <script src="/common.js"></script>
     <script src="/admin.js"></script>

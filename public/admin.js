@@ -1,14 +1,4 @@
 // ===== لوحة المشرف =====
-function init() {
-  const s = requireAuth();
-  if (!s || s.role !== 'admin') { location.href = '/'; return; }
-
-  // حماية: نتأكد أن livekit موجودة
-  if (!window.livekit || !window.livekit.Room) {
-    console.error('LiveKit client did not load');
-    alert('LiveKit client did not load');
-    return;
-  }
 const CITIES = [
   { label: 'مدينة رقم1', room: 'city-1' },
   { label: 'مدينة رقم2', room: 'city-2' },
@@ -24,7 +14,6 @@ let composer = null;
 let composite = null;
 let currentSelection = [];
 
-// انتظار مكتبة LiveKit
 async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
   const started = Date.now();
@@ -215,10 +204,10 @@ async function createWatch() {
   if (selection.length === 0) return alert('اختر عدد الكاميرات');
   const rec = await API.createWatch(selection);
   composite = rec; currentSelection = selection;
-    document.getElementById('viewModeBtn')?.addEventListener('click', ()=>{ document.getElementById('viewModal')?.classList.add('open'); });
-  document.getElementById('closeModalBtn')?.addEventListener('click', ()=>{ document.getElementById('viewModal')?.classList.remove('open'); });
-})();
-  closeViewModal(); await startComposer(rec);
+  document.getElementById('goWatchBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = false;
+  closeViewModal();
+  await startComposer(rec);
   alert('تم إنشاء غرفة المشاهدة: ' + rec.roomName);
 }
 async function applyChanges() {
@@ -247,7 +236,7 @@ function setupUI() {
   document.getElementById('goWatchBtn').addEventListener('click', openWatchWindow);
   document.getElementById('applyBtn').addEventListener('click', applyChanges);
   document.getElementById('stopBtn').addEventListener('click', stopBroadcast);
-  logoutBtnHandler(document.getElementById('logoutBtn'));
+  // زر الخروج مربوط من common.js
 }
 
 (async function init(){

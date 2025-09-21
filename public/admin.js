@@ -20,7 +20,7 @@ async function ensureLivekit(timeoutMs = 15000) {
   }
 
   const candidates = [
-    '/vendor/livekit-client.umd.js',
+    '/vendor/livekit-client.umd.js'
     // بدائل CDN فقط احتياطًا – لا تعتمد عليها في البناء
   ];
 

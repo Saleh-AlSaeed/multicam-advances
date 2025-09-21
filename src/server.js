@@ -1,5 +1,4 @@
-// server.js
-
+// src/server.js
 import 'dotenv/config';
 import express from 'express';
 import morgan from 'morgan';
@@ -13,6 +12,7 @@ import { AccessToken } from 'livekit-server-sdk';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// مجلد الجذر حيث يوجد public
 const ROOT_DIR = path.join(__dirname, '..');
 
 const app = express();
@@ -21,70 +21,80 @@ app.use(morgan('dev'));
 app.use(cors());
 
 // ---------- ENV ----------
-const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
+const LIVEKIT_URL =
+  process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
+const LIVEKIT_API_KEY =
+  process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
+const LIVEKIT_API_SECRET =
+  process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
 const PORT = process.env.PORT || 8080;
 
 // ---------- STATIC ----------
-// يخدم كل ما في public/ (بما فيه vendor/livekit-client.umd.js)
-const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
-app.use(express.static(PUBLIC_DIR));
+app.use(express.static(path.join(ROOT_DIR, 'public')));
 
-// لتفادي أي كاش عنيد أثناء التطوير على ملفات vendor (اختياري)
-app.use((req, res, next) => {
-  if (req.path.startsWith('/vendor/')) {
-    res.setHeader('Cache-Control', 'no-store'); // أثناء التطوير؛ احذفها إن أردت كاش طويل
-    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+// تخديم UMD محلياً من node_modules عند المسار /vendor/livekit-client.umd.min.js
+const UMD_PATH = path.join(
+  ROOT_DIR,
+  'node_modules',
+  'livekit-client',
+  'dist',
+  'livekit-client.umd.min.js'
+);
+app.get('/vendor/livekit-client.umd.min.js', (req, res) => {
+  try {
+    if (fs.existsSync(UMD_PATH)) {
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.sendFile(UMD_PATH);
+    } else {
+      res
+        .status(500)
+        .send('// LiveKit UMD not found in node_modules (livekit-client).');
+    }
+  } catch (e) {
+    res.status(500).send('// Failed to serve LiveKit UMD.');
   }
-  next();
 });
 
-// ---------- In-memory sessions ----------
+// --------- بيانات وهمية للمستخدمين ----------
 const USERS = {
-  // admin
-  'admin': { password: 'admin123', role: 'admin' },
-  // المدن
+  admin: { password: 'admin123', role: 'admin' },
   'مدينة رقم1': { password: 'City1', role: 'city', room: 'city-1' },
   'مدينة رقم2': { password: 'City2', role: 'city', room: 'city-2' },
   'مدينة رقم3': { password: 'City3', role: 'city', room: 'city-3' },
   'مدينة رقم4': { password: 'City4', role: 'city', room: 'city-4' },
   'مدينة رقم5': { password: 'City5', role: 'city', room: 'city-5' },
   'مدينة رقم6': { password: 'City6', role: 'city', room: 'city-6' },
-  // مشاهدين
-  'مشاهد1': { password: 'Watch1', role: 'watcher' },
-  'مشاهد2': { password: 'Watch2', role: 'watcher' },
-  'مشاهد3': { password: 'Watch3', role: 'watcher' },
-  'مشاهد4': { password: 'Watch4', role: 'watcher' },
-  'مشاهد5': { password: 'Watch5', role: 'watcher' },
-  'مشاهد6': { password: 'Watch6', role: 'watcher' },
+  مشاهد1: { password: 'Watch1', role: 'watcher' },
+  مشاهد2: { password: 'Watch2', role: 'watcher' },
+  مشاهد3: { password: 'Watch3', role: 'watcher' },
+  مشاهد4: { password: 'Watch4', role: 'watcher' },
+  مشاهد5: { password: 'Watch5', role: 'watcher' },
+  مشاهد6: { password: 'Watch6', role: 'watcher' }
 };
 
-const sessions = new Map(); // token -> { token, username, role, room, createdAt }
+const sessions = new Map(); // token -> { username, role, room, createdAt }
 
-// ---------- Persistence for watch sessions ----------
+// ---------- تخزين جلسات المشاهدة ----------
 const DATA_DIR = path.join(ROOT_DIR, 'data');
 const WATCH_FILE = path.join(DATA_DIR, 'watchSessions.json');
 
 function loadWatchSessions() {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
     if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
     const txt = fs.readFileSync(WATCH_FILE, 'utf-8');
     return JSON.parse(txt);
-  } catch (e) {
-    console.error('Failed to load watch sessions:', e);
+  } catch {
     return [];
   }
 }
 function saveWatchSessions(list) {
   try {
     fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf-8');
-  } catch (e) {
-    console.error('Failed to save watch sessions:', e);
-  }
+  } catch {}
 }
-let watchSessions = loadWatchSessions(); // [{ id, roomName, selection, createdAt, active }]
+let watchSessions = loadWatchSessions();
 
 // ---------- Helpers ----------
 function authMiddleware(required = null) {
@@ -103,19 +113,34 @@ function authMiddleware(required = null) {
   };
 }
 
-async function buildToken({ identity, roomName, canPublish = false, canSubscribe = true, metadata = '{}' }) {
-  if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET || !LIVEKIT_URL || LIVEKIT_URL.includes('REPLACE_ME')) {
-    throw new Error('LiveKit env not set: LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET');
-  }
-  const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { identity, metadata });
+/**
+ * توليد توكن LiveKit لحظة الطلب مع مدة قصيرة وهامش clock-skew
+ * - ttl: '10m' (عشر دقائق)
+ * - nbf: الآن ناقص 5 ثواني لتفادي فروقات الوقت
+ */
+async function buildToken({
+  identity,
+  roomName,
+  canPublish = false,
+  canSubscribe = true,
+  metadata = '{}'
+}) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+    identity,
+    ttl: '10m', // صلاحية قصيرة كافية لبدء الجلسة
+    nbf: nowSec - 5, // هامش 5 ثوانٍ
+    metadata
+  });
+
   at.addGrant({
     roomJoin: true,
     room: roomName,
-    canPublish: !!canPublish,
-    canSubscribe: !!canSubscribe,
-    canPublishData: true,
+    canPublish,
+    canSubscribe,
+    canPublishData: true
   });
-  at.ttl = 60 * 60 * 4; // 4 ساعات
+
   return await at.toJwt();
 }
 
@@ -141,7 +166,6 @@ app.post('/api/logout', authMiddleware(), (req, res) => {
   res.json({ ok: true });
 });
 
-// إنشاء توكن LiveKit
 app.post('/api/token', authMiddleware(), async (req, res) => {
   const { roomName, publish = false, subscribe = true, identity } = req.body || {};
   if (!roomName || !identity) {
@@ -153,16 +177,16 @@ app.post('/api/token', authMiddleware(), async (req, res) => {
       roomName,
       canPublish: !!publish,
       canSubscribe: !!subscribe,
-      metadata: JSON.stringify({ by: req.user.username, role: req.user.role }),
+      metadata: JSON.stringify({ by: req.user.username, role: req.user.role })
     });
     res.json({ token: jwt, url: LIVEKIT_URL });
   } catch (e) {
-    console.error('token error:', e);
+    console.error('token error:', e?.message || e);
     res.status(500).json({ error: 'failed_to_create_token' });
   }
 });
 
-// إنشاء جلسة مشاهدة (admin)
+// إنشاء/إدارة جلسات المشاهدة (admin)
 app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
   const { selection } = req.body || {};
   if (!Array.isArray(selection) || selection.length === 0 || selection.length > 6) {
@@ -170,7 +194,6 @@ app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
   }
   const id = uuidv4();
   const roomName = `watch-${id.slice(0, 8)}`;
-  // إلغاء تفعيل السابق
   watchSessions = (watchSessions || []).map((w) => ({ ...w, active: false }));
   const record = { id, roomName, selection, createdAt: Date.now(), active: true };
   watchSessions.push(record);
@@ -178,7 +201,6 @@ app.post('/api/create-watch', authMiddleware('admin'), (req, res) => {
   res.json(record);
 });
 
-// تعديل الجلسة
 app.put('/api/watch/:id', authMiddleware('admin'), (req, res) => {
   const { id } = req.params;
   const { selection, active } = req.body || {};
@@ -190,7 +212,6 @@ app.put('/api/watch/:id', authMiddleware('admin'), (req, res) => {
   res.json(watchSessions[idx]);
 });
 
-// إيقاف الجلسة
 app.post('/api/watch/:id/stop', authMiddleware('admin'), (req, res) => {
   const { id } = req.params;
   const idx = (watchSessions || []).findIndex((w) => w.id === id);
@@ -200,7 +221,6 @@ app.post('/api/watch/:id/stop', authMiddleware('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
-// الاستعلام
 app.get('/api/watch/active', authMiddleware(), (req, res) => {
   const active = [...(watchSessions || [])].reverse().find((w) => w.active);
   res.json(active || null);
@@ -214,12 +234,12 @@ app.get('/api/watch/:id', authMiddleware(), (req, res) => {
   res.json(item);
 });
 
-// Health (اختياري)
-app.get('/healthz', (_, res) => res.json({ ok: true }));
+// Health
+app.get('/health', (_, res) => res.json({ ok: true }));
 
-// Root → صفحة الدخول
+// Root
 app.get('/', (_, res) => {
-  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+  res.sendFile(path.join(ROOT_DIR, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {

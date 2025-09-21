@@ -56,13 +56,12 @@
     <!-- تحميل LiveKit UMD محلي فقط -->
     <script src="/vendor/livekit-client.umd.js"></script>
     <script>
-// Shim: وحّد الاسم العالمي أياً كان
-window.livekit =
-  window.livekit ||
-  window.LivekitClient ||   // بعض الإصدارات تستخدم هذا
-  window.LiveKit ||         // احتياط لأسماء قديمة
-  window.lk || null;
-</script>
+    window.livekit =
+    window.livekit ||
+    window.LivekitClient ||   // بعض الإصدارات تستخدم هذا
+    window.LiveKit ||         // احتياط لأسماء قديمة
+    window.lk || null;
+    </script>
     <script src="/common.js"></script>
     <script src="/admin.js"></script>
   </body>

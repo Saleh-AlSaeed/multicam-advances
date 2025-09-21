@@ -1,11 +1,10 @@
 {
   "name": "multicam-advances",
   "version": "1.0.0",
-  "description": "Multicam Advances Project (LiveKit, vendored UMD)",
+  "description": "Multicam Advances Project (LiveKit, local UMD only)",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "postinstall": "node scripts/fetch-umd.js",
     "start": "node src/server.js",
     "dev": "nodemon src/server.js"
   },

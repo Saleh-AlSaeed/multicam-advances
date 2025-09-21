@@ -363,17 +363,15 @@ function setupUI() {
   }, { passive:false });
 }
 
-(async function init() {
-  ensureAuth();
-  setupUI();
-  renderSlots();
-  // لا نبدأ أي اتصال قبل أن نتأكد من UMD
+// --- في نهاية admin.js: شغّل اللوحة داخل IIFE async بدلاً من await على المستوى الأعلى ---
+(async function initAdmin() {
   try {
-    await ensureLivekit();
+    ensureAuth();          // يتأكد من أنك Admin وإلا يرجع للصفحة الرئيسية
+    setupUI();             // يربط الأزرار (طريقة المشاهدة/تطبيق/إيقاف/خروج...)
+    renderSlots();         // يبني حقول اختيار المدن
+    await connectCityPreviews(); // <-- فيها await، لذلك يجب أن نكون داخل async
   } catch (e) {
-    console.error(e);
-    alert(e.message || e);
-    return;
+    console.error('[admin] init error:', e);
+    alert('تعذّر تهيئة لوحة المشرف: ' + (e?.message || e));
   }
-  await connectCityPreviews();
 })();

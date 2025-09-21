@@ -162,38 +162,101 @@ function layoutRects(n, W, H) {
 
 async function startComposer(rec) {
   const lk = await ensureLivekit();
-  const { Room, LocalVideoTrack, LocalAudioTrack } = lk;
+  const { Room, LocalVideoTrack, LocalAudioTrack, RoomEvent } = lk;
 
   const s = API.session();
   const canvas = document.getElementById('mixerCanvas');
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
 
+  // غرفة البث المجمّع
   const room = new Room({});
   const tk = await API.token(rec.roomName, `admin-composer-${s.username}`, true, false);
   await room.connect(tk.url, tk.token);
 
+  // وجهة صوتية لتجميع أصوات المدن المختارة
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  try { await audioCtx.resume(); } catch(_) {}
   const dest = audioCtx.createMediaStreamDestination();
 
-  const videos = [];
-  for (const sel of rec.selection) {
-    const vidEl = document.getElementById('tile-' + sel.room);
-    videos.push(sel.video ? vidEl : null);
-    if (sel.audio) {
-      const city = cityRooms.find(c => c.room === sel.room);
-      if (city) {
-        city.lkRoom.remoteParticipants.forEach(p => {
-          p.audioTracks.forEach(pub => {
-            if (pub.track) {
-              const src = audioCtx.createMediaStreamSource(new MediaStream([pub.track.mediaStreamTrack]));
-              src.connect(dest);
-            }
-          });
-        });
+  // ربط صوت مدينة (حالًا وعند وصوله لاحقًا)
+  function connectCityAudioToDest(city) {
+    const attachAudioPub = (pubOrTrack) => {
+      const track = pubOrTrack?.track ?? pubOrTrack; // نقبل publication أو track
+      try {
+        if (track && track.mediaStreamTrack) {
+          const ms = new MediaStream([track.mediaStreamTrack]);
+          const src = audioCtx.createMediaStreamSource(ms);
+          src.connect(dest);
+        }
+      } catch (_) {}
+    };
+
+    // الموجود حاليًا
+    if (city?.lkRoom?.remoteParticipants) {
+      for (const [, participant] of city.lkRoom.remoteParticipants) {
+        if (participant?.audioTracks) {
+          participant.audioTracks.forEach((pub) => attachAudioPub(pub));
+        }
       }
     }
+
+    // أي اشتراك جديد لاحقًا
+    city.lkRoom?.on?.(RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === 'audio') attachAudioPub(track);
+    });
   }
+
+  // تجهيز قائمة فيديوهات المدن المختارة
+  const videos = [];
+  for (const sel of rec.selection) {
+    // اعثر على بطاقة المعاينة الخاصة بهذه المدينة (تُنشأ في connectCityPreviews)
+    const vidEl = document.getElementById('tile-' + sel.room);
+    videos.push(sel.video ? vidEl : null);
+
+    if (sel.audio) {
+      const city = cityRooms.find((c) => c.room === sel.room);
+      if (city) connectCityAudioToDest(city);
+    }
+  }
+
+  // نشر فيديو المِكْس من الـ canvas
+  const vTrack = canvas.captureStream(30).getVideoTracks()[0];
+  const localV = new LocalVideoTrack(vTrack);
+  await room.localParticipant.publishTrack(localV, { name: 'composite' });
+
+  // نشر الصوت المُجمّع إن وُجد
+  const aTrack = dest.stream.getAudioTracks()[0];
+  if (aTrack) {
+    const localA = new LocalAudioTrack(aTrack);
+    await room.localParticipant.publishTrack(localA, { name: 'mixed' });
+  }
+
+  // رسم اللقطات على اللوحة
+  const rects = layoutRects(rec.selection.length, W, H);
+  let rafId = 0;
+  function draw() {
+    try {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+      videos.forEach((v, i) => {
+        const r = rects[i];
+        if (v && r) ctx.drawImage(v, r.x, r.y, r.w, r.h);
+      });
+    } catch (_) {}
+    rafId = requestAnimationFrame(draw);
+  }
+  draw();
+
+  composer = {
+    room,
+    stop: async () => {
+      try { cancelAnimationFrame(rafId); } catch (_){}
+      try { [...room.localParticipant.tracks.values()].forEach(pub => { try { pub.unpublish(); } catch(_){}}); } catch (_){}
+      try { room.disconnect(); } catch (_){}
+    }
+  };
+}
 
   const vTrack = canvas.captureStream(30).getVideoTracks()[0];
   const localV = new LocalVideoTrack(vTrack);

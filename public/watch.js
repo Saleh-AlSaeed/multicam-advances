@@ -1,5 +1,3 @@
-// ===== صفحة المشاهدة (مشترك) =====
-
 let lkRoom = null;
 
 async function ensureLivekit(timeoutMs = 12000) {
@@ -22,7 +20,6 @@ function ensureAuthWatch() {
 async function start() {
   try {
     ensureAuthWatch();
-    logoutBtnHandler(document.getElementById('logoutBtn'));
 
     const id = qs('id');
     if (!id) { alert('لا توجد جلسة مشاهدة'); return; }

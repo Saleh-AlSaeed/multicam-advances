@@ -16,8 +16,7 @@ async function ensureLivekit(timeoutMs = 15000) {
     });
   }
 
-  const candidates = [
-    // ملفاتك المحلية داخل public/vendor
+  const candidate = [
     '/vendor/livekit-client.umd.js'
   ];
 

@@ -1,18 +1,13 @@
 // ===== لوحة المشرف =====
 
-// انتظر جاهزية livekit (حتى 12 ثانية)
+// ننتظر جاهزية livekit حتى 12 ثانية
 async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const t = setInterval(() => {
-      if (window.livekit) {
-        clearInterval(t);
-        resolve(window.livekit);
-      } else if (Date.now() - started > timeoutMs) {
-        clearInterval(t);
-        reject(new Error('LiveKit client did not load'));
-      }
+      if (window.livekit) { clearInterval(t); resolve(window.livekit); }
+      else if (Date.now() - started > timeoutMs) { clearInterval(t); reject(new Error('LiveKit client did not load')); }
     }, 50);
   });
 }
@@ -23,7 +18,24 @@ function ensureAuth() {
   return s;
 }
 
-// المدن الثابتة
+// 🔧 دالة خروج آمنة حتى لو لم تُحمّل common.js لأي سبب
+function safeAttachLogout() {
+  const btn = document.getElementById('logoutBtn');
+  if (!btn) return;
+  if (typeof window.attachLogout === 'function') {
+    window.attachLogout(btn);
+  } else {
+    // fallback
+    btn.onclick = null;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      try { localStorage.removeItem('session'); } catch(_) {}
+      location.replace('/');
+    }, { passive:false });
+  }
+}
+
+// المدن
 const CITIES = [
   { label: 'مدينة رقم1', room: 'city-1' },
   { label: 'مدينة رقم2', room: 'city-2' },
@@ -36,7 +48,7 @@ const CITIES = [
 let livekitUrl = null;
 let cityRooms = [];     // {room,label,lkRoom,videoEl,meterEl}
 let composer = null;    // {room, stop()}
-let composite = null;   // السِجل الذي ترجعه /api/create-watch
+let composite = null;   // سجل create-watch
 let currentSelection = [];
 
 function layoutRects(n, W, H) {
@@ -83,7 +95,6 @@ async function connectCityPreviews() {
     lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
       if (track.kind === 'video') track.attach(videoEl);
       if (track.kind === 'audio') {
-        // مقياس بسيط للصوت
         try {
           const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
           const src = audioCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
@@ -259,9 +270,8 @@ function setupUI(){
   document.getElementById('applyBtn').addEventListener('click', applyChanges);
   document.getElementById('stopBtn').addEventListener('click', stopBroadcast);
 
-  // زر الخروج — الاسم الصحيح في common.js هو attachLogout
-  const logoutBtn = document.getElementById('logoutBtn');
-  attachLogout(logoutBtn);
+  // ✅ إصلاح خطأ attachLogout
+  safeAttachLogout();
 }
 
 (async function init(){
@@ -269,7 +279,7 @@ function setupUI(){
     ensureAuth();
     setupUI();
     renderSlots();
-    // ✅ انتظر جاهزية livekit قبل معاينات المدن
+    // انتظر جاهزية LiveKit قبل بناء المعاينات
     await ensureLivekit();
     await connectCityPreviews();
   } catch (e) {

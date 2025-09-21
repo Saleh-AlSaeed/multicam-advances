@@ -1,78 +1,10 @@
-// ===== لوحة المشرف =====
+// ===== لوحة المشرف: معاينة غرف المدن، إنشاء/إدارة جلسة مشاهدة، دمج الفيديو/الصوت على كانفس =====
 
-// محمّل LiveKit مرن مع سجلّ أخطاء واضح
-let __lkLoading = null;
-async function ensureLivekit(timeoutMs = 15000) {
-  if (window.livekit) return window.livekit;
-
-  async function loadScript(url) {
-    return new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = url;
-      s.async = true;
-      s.onload = () => {
-        // أحيانًا يستغرق ربط window.livekit نبضة event loop واحدة
-        setTimeout(() => resolve({ ok: !!window.livekit, url }), 0);
-      };
-      s.onerror = () => reject(new Error('script failed: ' + url));
-      document.head.appendChild(s);
-    });
-  }
-
-  const candidates = [
-    '/vendor/livekit-client.umd.js'
-  ];
-
-  if (!__lkLoading) {
-    __lkLoading = (async () => {
-      const errors = [];
-      for (const u of candidates) {
-        try {
-          console.debug('[LK loader] trying:', u);
-          const r = await loadScript(u);
-          if (r.ok && window.livekit) {
-            console.debug('[LK loader] loaded from:', r.url);
-            return;
-          }
-          errors.push('loaded but window.livekit missing: ' + u);
-        } catch (e) {
-          errors.push(e.message || String(e));
-        }
-      }
-      throw new Error('All candidates failed:\n' + errors.join('\n'));
-    })();
-  }
-
-  // مهلة قصوى
-  await Promise.race([
-    __lkLoading,
-    new Promise((_, rej) => setTimeout(() => rej(new Error('LiveKit client did not load (timeout)')), timeoutMs)),
-  ]);
-
-  if (!window.livekit) throw new Error('LiveKit client did not load');
-  return window.livekit;
-}
-
-function ensureAuth() {
-  const s = requireAuth();
-  if (!s || s.role !== 'admin') location.href = '/';
-  return s;
-}
-
-// خروج آمن (بدل attachLogout غير المعرف أحيانًا)
-function safeAttachLogout() {
-  const btn = document.getElementById('logoutBtn');
-  if (!btn) return;
-  if (typeof window.attachLogout === 'function') window.attachLogout(btn);
-  else {
-    btn.onclick = null;
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      try { localStorage.removeItem('session'); } catch (_) {}
-      location.replace('/');
-    }, { passive: false });
-  }
-}
+let livekitUrl = null;
+let cityRooms = [];
+let composer = null;
+let composite = null;
+let currentSelection = [];
 
 const CITIES = [
   { label: 'مدينة رقم1', room: 'city-1' },
@@ -83,20 +15,22 @@ const CITIES = [
   { label: 'مدينة رقم6', room: 'city-6' },
 ];
 
-let livekitUrl = null;
-let cityRooms = [];
-let composer = null;
-let composite = null;
+// انتظار توفر window.livekit (الـ UMD)
+async function ensureLivekit(timeoutMs = 15000) {
+  if (window.livekit) return window.livekit;
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const t = setInterval(() => {
+      if (window.livekit) { clearInterval(t); resolve(window.livekit); }
+      else if (Date.now() - start > timeoutMs) { clearInterval(t); reject(new Error('LiveKit client did not load')); }
+    }, 50);
+  });
+}
 
-function layoutRects(n, W, H) {
-  const rects = [];
-  if (n === 1) rects.push({ x: 0, y: 0, w: W, h: H });
-  else if (n === 2) { const w=W/2,h=H; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h}); }
-  else if (n === 3) { const w=W/3,h=H; for (let i=0;i<3;i++) rects.push({x:i*w,y:0,w,h}); }
-  else if (n === 4) { const w=W/2,h=H/2; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h}); }
-  else if (n === 5) { const w=W/3,h=H/2; let i=0; for (let r=0;r<2;r++) for (let c=0;c<3;c++){ if(i<5) rects.push({x:c*w,y:r*h,w,h}); i++; } }
-  else if (n === 6) { const w=W/3,h=H/2; for (let r=0;r<2;r++) for (let c=0;c<3;c++) rects.push({x:c*w,y:r*h,w,h}); }
-  return rects;
+function ensureAuth() {
+  const s = requireAuth();
+  if (!s || s.role !== 'admin') location.href = '/';
+  return s;
 }
 
 async function connectCityPreviews() {
@@ -141,13 +75,17 @@ async function connectCityPreviews() {
           const data = new Uint8Array(analyser.frequencyBinCount);
           const loop = () => {
             analyser.getByteTimeDomainData(data);
-            let sum=0; for (let i=0;i<data.length;i++){ const v=(data[i]-128)/128; sum+=v*v; }
-            const rms = Math.sqrt(sum/data.length);
-            meterFill.style.width = Math.min(100, Math.max(0, Math.round(rms*200))) + '%';
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) {
+              const v = (data[i] - 128) / 128;
+              sum += v * v;
+            }
+            const rms = Math.sqrt(sum / data.length);
+            meterFill.style.width = Math.min(100, Math.max(0, Math.round(rms * 200))) + '%';
             requestAnimationFrame(loop);
           };
           loop();
-        } catch(_) {}
+        } catch (_) {}
       }
     });
 
@@ -155,13 +93,14 @@ async function connectCityPreviews() {
   }
 }
 
-function openViewModal(){ document.getElementById('viewModal').classList.add('open'); renderSlots(); }
-function closeViewModal(){ document.getElementById('viewModal').classList.remove('open'); }
-function renderSlots(){
+// Modal
+function openViewModal() { document.getElementById('viewModal').classList.add('open'); renderSlots(); }
+function closeViewModal() { document.getElementById('viewModal').classList.remove('open'); }
+function renderSlots() {
   const n = parseInt(document.getElementById('camCount').value, 10);
   const slots = document.getElementById('slots');
   slots.innerHTML = '';
-  for (let i=0;i<n;i++){
+  for (let i = 0; i < n; i++) {
     const field = document.createElement('fieldset');
     field.innerHTML = `
       <legend>كاميرا رقم ${i+1}</legend>
@@ -183,16 +122,27 @@ function renderSlots(){
     slots.appendChild(field);
   }
 }
-function readSelectionFromUI(){
+function readSelectionFromUI() {
   const slots = [...document.querySelectorAll('#slots fieldset')];
   return slots.map(el => ({
     room: el.querySelector('.userSel').value,
     video: el.querySelector('.optVideo').checked,
-    audio: el.querySelector('.optAudio').checked,
+    audio: el.querySelector('.optAudio').checked
   }));
 }
 
-async function startComposer(rec){
+function layoutRects(n, W, H) {
+  const rects = [];
+  if (n === 1) rects.push({ x: 0, y: 0, w: W, h: H });
+  else if (n === 2) { const w=W/2,h=H; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h}); }
+  else if (n === 3) { const w=W/3,h=H; for (let i=0;i<3;i++) rects.push({x:i*w,y:0,w,h}); }
+  else if (n === 4) { const w=W/2,h=H/2; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h}); }
+  else if (n === 5) { const w=W/3,h=H/2; let i=0; for (let r=0;r<2;r++) for (let c=0;c<3;c++){ if(i<5) rects.push({x:c*w,y:r*h,w,h}); i++; } }
+  else if (n === 6) { const w=W/3,h=H/2; for (let r=0;r<2;r++) for (let c=0;c<3;c++) rects.push({x:c*w,y:r*h,w,h}); }
+  return rects;
+}
+
+async function startComposer(rec) {
   const lk = await ensureLivekit();
   const { Room, LocalVideoTrack, LocalAudioTrack } = lk;
 
@@ -239,9 +189,13 @@ async function startComposer(rec){
 
   const rects = layoutRects(rec.selection.length, W, H);
   let rafId = 0;
-  function draw(){
-    ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
-    videos.forEach((v,i)=>{ const r=rects[i]; if(v&&r){ try{ ctx.drawImage(v,r.x,r.y,r.w,r.h);}catch(_){}}});
+  function draw() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    videos.forEach((v, i) => {
+      const r = rects[i];
+      if (v && r) { try { ctx.drawImage(v, r.x, r.y, r.w, r.h); } catch (_) {} }
+    });
     rafId = requestAnimationFrame(draw);
   }
   draw();
@@ -249,52 +203,67 @@ async function startComposer(rec){
   composer = {
     room,
     stop: async () => {
-      try { cancelAnimationFrame(rafId); } catch(_){}
-      try { [...room.localParticipant.tracks.values()].forEach(pub => { try{ pub.unpublish(); }catch(_){}}); } catch(_){}
-      try { room.disconnect(); } catch(_){}
+      try { cancelAnimationFrame(rafId); } catch(_) {}
+      try { [...room.localParticipant.tracks.values()].forEach(pub => { try { pub.unpublish(); } catch(_) {} }); } catch(_) {}
+      try { room.disconnect(); } catch(_) {}
     }
   };
 }
 
-async function stopComposer(){ if (composer?.stop) { await composer.stop(); composer = null; } }
-async function restartComposer(rec, selection){ await stopComposer(); await startComposer({ ...rec, selection }); }
+async function stopComposer() {
+  if (composer?.stop) {
+    await composer.stop();
+    composer = null;
+  }
+}
+async function restartComposer(rec, selection) {
+  await stopComposer();
+  await startComposer({ ...rec, selection });
+}
 
-async function createWatch(){
+async function createWatch() {
   const selection = readSelectionFromUI();
   if (selection.length === 0) return alert('اختر عدد الكاميرات');
   const rec = await API.createWatch(selection);
+  composite = rec;
+  currentSelection = selection;
   closeViewModal();
   await startComposer(rec);
-  document.getElementById('stopBtn').disabled = false;
   document.getElementById('goWatchBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = false;
   alert('تم إنشاء غرفة المشاهدة: ' + rec.roomName);
 }
 
-async function applyChanges(){
+async function applyChanges() {
   if (!composite) return openViewModal();
   const selection = readSelectionFromUI();
+  currentSelection = selection;
   await fetch(`/api/watch/${composite.id}`, {
     method: 'PUT',
-    headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+API.session().token },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API.session().token },
     body: JSON.stringify({ selection })
   });
   await restartComposer(composite, selection);
   alert('تم تطبيق التغييرات على البث الحالي.');
 }
 
-async function stopBroadcast(){
+async function stopBroadcast() {
   if (!composite) return;
-  await fetch(`/api/watch/${composite.id}/stop`, { method:'POST', headers: { 'Authorization':'Bearer '+API.session().token }});
+  await fetch(`/api/watch/${composite.id}/stop`, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + API.session().token }
+  });
   await stopComposer();
   document.getElementById('stopBtn').disabled = true;
   alert('تم إيقاف البث.');
 }
-function openWatchWindow(){
+
+function openWatchWindow() {
   if (!composite) return alert('أنشئ جلسة مشاهدة أولاً');
   window.open(`/watch.html?id=${composite.id}`, '_blank');
 }
 
-function setupUI(){
+function setupUI() {
   document.getElementById('viewModeBtn').addEventListener('click', openViewModal);
   document.getElementById('closeModalBtn').addEventListener('click', closeViewModal);
   document.getElementById('camCount').addEventListener('change', renderSlots);
@@ -302,18 +271,28 @@ function setupUI(){
   document.getElementById('goWatchBtn').addEventListener('click', openWatchWindow);
   document.getElementById('applyBtn').addEventListener('click', applyChanges);
   document.getElementById('stopBtn').addEventListener('click', stopBroadcast);
-  safeAttachLogout();
+
+  // زر الخروج (احتياط مع common.js)
+  const lo = document.getElementById('logoutBtn');
+  lo?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    try { await API.logout(); } catch(_) {}
+    try { localStorage.removeItem('session'); } catch(_) {}
+    location.replace('/');
+  }, { passive:false });
 }
 
-(async function init(){
+(async function init() {
+  ensureAuth();
+  setupUI();
+  renderSlots();
+  // لا نبدأ أي اتصال قبل أن نتأكد من UMD
   try {
-    ensureAuth();
-    setupUI();
-    renderSlots();
-    await ensureLivekit();       // ← أجبر التحميل هنا
-    await connectCityPreviews(); // ← ثم اتصل بالمدن
+    await ensureLivekit();
   } catch (e) {
-    console.error('[admin] ensureLivekit error:', e);
+    console.error(e);
     alert(e.message || e);
+    return;
   }
+  await connectCityPreviews();
 })();

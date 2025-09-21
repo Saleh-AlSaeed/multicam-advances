@@ -1,6 +1,7 @@
 // ===== صفحة المشاهدة (مشترك) =====
 
 let lkRoom = null;
+let currentVideoPub = null; // آخر RemoteTrackPublication للفيديو المشترك
 
 /* توحيد مرجع مكتبة LiveKit على window.livekit */
 function normalizeLivekit() {
@@ -47,10 +48,67 @@ async function safePlay(videoEl, wantUnmute=false) {
   try { await videoEl.play(); } catch(e) { showOverlay(true); }
 }
 
+/** تطبيق إعداد الجودة على الـ publication المتاح */
+async function applyQualitySetting(quality) {
+  if (!lkRoom) return;
+  const lk = window.livekit || {};
+  const VideoQuality = lk.VideoQuality || { LOW: 'low', MEDIUM: 'medium', HIGH: 'high' };
+
+  // Auto = نعيد تفعيل adaptiveStream
+  if (quality === 'auto') {
+    try { lkRoom.setAdaptiveStream?.(true); } catch {}
+    return;
+  }
+
+  // غير Auto: أوقف adaptiveStream واطلب طبقة محددة
+  try { lkRoom.setAdaptiveStream?.(false); } catch {}
+
+  // إن لم نمتلك publication بعد، سنطبّق عند وصوله
+  const pub = currentVideoPub;
+  if (!pub) return;
+
+  // API حديثة: setSubscriptionSettings({ videoQuality })
+  if (typeof pub.setSubscriptionSettings === 'function') {
+    const vq =
+      quality === 'low' ? VideoQuality.LOW :
+      quality === 'high' ? VideoQuality.HIGH :
+      VideoQuality.MEDIUM;
+    try {
+      await pub.setSubscriptionSettings({ videoQuality: vq });
+      return;
+    } catch {}
+  }
+
+  // بديل لنسخ أقدم: setVideoDimensions بأبعاد تقريبية
+  if (typeof pub.setVideoDimensions === 'function') {
+    const dims = quality === 'low'
+      ? { width: 320, height: 180 }
+      : quality === 'high'
+      ? { width: 1280, height: 720 }
+      : { width: 640, height: 360 };
+    try {
+      await pub.setVideoDimensions(dims);
+      return;
+    } catch {}
+  }
+
+  // إن لم تتوفر أي دوال، نكتفي بإبقاء adaptiveStream off (سيحاول أعلى طبقة)
+}
+
+/** حين اختيار المستخدم جودة من القائمة */
+function wireQualitySelector() {
+  const sel = document.getElementById('qualitySel');
+  if (!sel) return;
+  sel.addEventListener('change', () => {
+    applyQualitySetting(sel.value);
+  }, { passive: true });
+}
+
 async function start() {
   try {
     const s = requireAuthWatch();
     attachLogout(document.getElementById('logoutBtn'));
+    wireQualitySelector();
 
     const id = qs('id');
     if (!id) { alert('لا توجد جلسة مشاهدة'); return; }
@@ -75,15 +133,20 @@ async function start() {
     lkRoom = new Room({ adaptiveStream: true, autoSubscribe: true });
     await lkRoom.connect(tk.url, tk.token);
 
-    // عندما يصل أي تراك
-    lkRoom.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+    const attachVideo = (track, pub) => {
+      currentVideoPub = pub || currentVideoPub;
+      track.attach(player);
+      safePlay(player, /*unmute*/ false);
+      // طبّق الجودة الحالية (قد تكون غير Auto)
+      const sel = document.getElementById('qualitySel');
+      if (sel && sel.value !== 'auto') applyQualitySetting(sel.value);
+    };
+
+    lkRoom.on(RoomEvent.TrackSubscribed, (track, pub) => {
       try {
         if (track.kind === Track.Kind.Video) {
-          track.attach(player);
-          // شغّل بصمت أولاً
-          safePlay(player, /*unmute*/ false);
+          attachVideo(track, pub);
         } else if (track.kind === Track.Kind.Audio) {
-          // الأفضل استخدام عنصر صوت مستقل لضمان التشغيل
           const a = document.getElementById('hidden-audio') || (() => {
             const el = document.createElement('audio');
             el.id = 'hidden-audio';
@@ -92,7 +155,6 @@ async function start() {
             return el;
           })();
           track.attach(a);
-          // لا نحاول إلغاء الكتم تلقائياً (سياسات المتصفح)، نطلب تفاعل المستخدم
         }
       } catch(e) {
         console.warn('[watch] attach error', e);
@@ -106,7 +168,7 @@ async function start() {
           const t = pub.track;
           if (!t) return;
           if (t.kind === Track.Kind.Video) {
-            t.attach(player); safePlay(player, false);
+            attachVideo(t, pub);
           } else if (t.kind === Track.Kind.Audio) {
             const a = document.getElementById('hidden-audio') || (() => {
               const el = document.createElement('audio');
@@ -129,10 +191,8 @@ async function start() {
       else player.requestFullscreen?.();
     });
     document.getElementById('playBtn')?.addEventListener('click', async () => {
-      // عند الضغط نلغي الكتم ونحاول التشغيل مرة أخرى (هذا يرضي سياسات المتصفحات)
       await safePlay(player, /*unmute*/ true);
       showOverlay(false);
-      // شغّل عنصر الصوت أيضاً إن وُجد
       const a = document.getElementById('hidden-audio');
       if (a) { try { a.muted = false; await a.play(); } catch {} }
     });

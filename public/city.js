@@ -18,12 +18,7 @@ async function ensureLivekit(timeoutMs = 15000) {
 
   const candidates = [
     // ملفاتك المحلية داخل public/vendor
-    '/vendor/livekit-client.umd.min.js',
-    '/vendor/livekit-client.umd.js',
-    '/vendor/livekit-client.js',
-    // بدائل CDN (للنسخ الاحتياطية فقط)
-    'https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js',
-    'https://unpkg.com/livekit-client@2.15.7/dist/livekit-client.umd.js',
+    '/vendor/livekit-client.umd.js'
   ];
 
   if (!__lkLoading) {

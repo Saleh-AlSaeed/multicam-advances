@@ -1,15 +1,30 @@
 // ===== لوحة المشرف =====
 
-// ننتظر جاهزية livekit حتى 12 ثانية
+// تحميل LiveKit UMD ديناميكيًا إن لم يكن محمَّلاً
+let __lkLoading = null;
 async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
-  const started = Date.now();
-  return new Promise((resolve, reject) => {
-    const t = setInterval(() => {
-      if (window.livekit) { clearInterval(t); resolve(window.livekit); }
-      else if (Date.now() - started > timeoutMs) { clearInterval(t); reject(new Error('LiveKit client did not load')); }
-    }, 50);
-  });
+
+  // حمّل سكربت UMD من المسار المحلي داخل المشروع
+  if (!__lkLoading) {
+    __lkLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = '/vendor/livekit-client.umd.min.js';
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('LiveKit UMD not found at /vendor/livekit-client.umd.min.js'));
+      document.head.appendChild(s);
+    });
+  }
+
+  // انتظر حتى يجهز أو ينتهي التوقيت
+  await Promise.race([
+    __lkLoading,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('LiveKit client did not load')), timeoutMs)),
+  ]);
+
+  if (!window.livekit) throw new Error('LiveKit client did not load');
+  return window.livekit;
 }
 
 function ensureAuth() {
@@ -18,14 +33,13 @@ function ensureAuth() {
   return s;
 }
 
-// 🔧 دالة خروج آمنة حتى لو لم تُحمّل common.js لأي سبب
+// دالة خروج آمنة (تعالج الخطأ السابق: attachLogout is not defined)
 function safeAttachLogout() {
   const btn = document.getElementById('logoutBtn');
   if (!btn) return;
   if (typeof window.attachLogout === 'function') {
     window.attachLogout(btn);
   } else {
-    // fallback
     btn.onclick = null;
     btn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -35,7 +49,6 @@ function safeAttachLogout() {
   }
 }
 
-// المدن
 const CITIES = [
   { label: 'مدينة رقم1', room: 'city-1' },
   { label: 'مدينة رقم2', room: 'city-2' },
@@ -46,9 +59,9 @@ const CITIES = [
 ];
 
 let livekitUrl = null;
-let cityRooms = [];     // {room,label,lkRoom,videoEl,meterEl}
-let composer = null;    // {room, stop()}
-let composite = null;   // سجل create-watch
+let cityRooms = [];
+let composer = null;
+let composite = null;
 let currentSelection = [];
 
 function layoutRects(n, W, H) {
@@ -270,7 +283,7 @@ function setupUI(){
   document.getElementById('applyBtn').addEventListener('click', applyChanges);
   document.getElementById('stopBtn').addEventListener('click', stopBroadcast);
 
-  // ✅ إصلاح خطأ attachLogout
+  // إصلاح زر الخروج
   safeAttachLogout();
 }
 
@@ -279,7 +292,7 @@ function setupUI(){
     ensureAuth();
     setupUI();
     renderSlots();
-    // انتظر جاهزية LiveKit قبل بناء المعاينات
+    // نضمن جاهزية LiveKit قبل إنشاء المعاينات
     await ensureLivekit();
     await connectCityPreviews();
   } catch (e) {

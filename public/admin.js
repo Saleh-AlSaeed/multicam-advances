@@ -68,7 +68,7 @@ async function connectCityPreviews(){
     const videoEl = tile.querySelector('video');
     const meterEl = tile.querySelector('.meter > i');
 
-    // ✅ اجعل الاشتراك تلقائياً لتقليل حالات السباق
+    // الاشتراك تلقائياً لتفادي حالات السباق
     const lkRoom = new Room({
       adaptiveStream: true,
       dynacast: true,
@@ -79,41 +79,65 @@ async function connectCityPreviews(){
     const tk = await API.token(item.room, identity, false, true);
     await lkRoom.connect(tk.url, tk.token);
 
+    // 🔔 مهم: أي مسار يُنشر لاحقاً، نجبر الاشتراك فيه
+    lkRoom.on(RoomEvent.TrackPublished, async (pub, participant) => {
+      try { await pub.setSubscribed(true); } catch {}
+    });
+
     // عند اكتمال الاشتراك بأي مسار، اربط الفيديو/المقياس وشغّل الفيديو فوراً
     lkRoom.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
       try {
         if (track.kind === Track.Kind.Video) {
           track.attach(videoEl);
-          // تشغيل صريح حتى على بعض المتصفحات المتشددة
           videoEl.muted = true;
           videoEl.playsInline = true;
           videoEl.autoplay = true;
           videoEl.play().catch(()=>{});
+          console.log('[admin] attached video from', participant?.identity);
         } else if (track.kind === Track.Kind.Audio) {
           attachAudioMeter(track, meterEl);
+          console.log('[admin] attached audio from', participant?.identity);
         }
-      } catch {}
+      } catch (e) {
+        console.warn('TrackSubscribed attach err:', e);
+      }
     });
 
-    // لو كانت المسارات منشورة قبل ربط المستمعين، أرفقها الآن
+    // لو كانت المسارات منشورة قبل تركيب المستمعين، أرفقها الآن وأجبر الاشتراك
     const attachExisting = () => {
       lkRoom.remoteParticipants.forEach(p => {
-        p.trackPublications.forEach(pub => {
+        p.trackPublications.forEach(async (pub) => {
+          try { await pub.setSubscribed(true); } catch {}
           const t = pub.track;
-          if (!t) return;
-          if (t.kind === Track.Kind.Video) {
-            t.attach(videoEl);
-            videoEl.muted = true;
-            videoEl.playsInline = true;
-            videoEl.autoplay = true;
-            videoEl.play().catch(()=>{});
-          } else if (t.kind === Track.Kind.Audio) {
-            attachAudioMeter(t, meterEl);
+          if (t) {
+            if (t.kind === Track.Kind.Video) {
+              t.attach(videoEl);
+              videoEl.muted = true;
+              videoEl.playsInline = true;
+              videoEl.autoplay = true;
+              videoEl.play().catch(()=>{});
+            } else if (t.kind === Track.Kind.Audio) {
+              attachAudioMeter(t, meterEl);
+            }
+          } else {
+            // لو ما توفر التراك بعد، اربطه عند الاشتراك
+            pub.on?.('subscribed', (track) => {
+              if (track.kind === Track.Kind.Video) {
+                track.attach(videoEl);
+                videoEl.muted = true;
+                videoEl.playsInline = true;
+                videoEl.autoplay = true;
+                videoEl.play().catch(()=>{});
+              } else if (track.kind === Track.Kind.Audio) {
+                attachAudioMeter(track, meterEl);
+              }
+            });
           }
         });
       });
     };
     attachExisting();
+
     lkRoom.on(RoomEvent.ParticipantConnected, attachExisting);
 
     cityRooms.push({ ...item, lkRoom, tileEl: tile, videoEl, meterEl });
@@ -160,7 +184,7 @@ function layoutRects(n,W,H){
   const r=[]; if(n===1) r.push({x:0,y:0,w:W,h:H});
   else if(n===2){const w=W/2,h=H;r.push({x:0,y:0,w,h},{x:w,y:0,w,h});}
   else if(n===3){const w=W/3,h=H;for(let i=0;i<3;i++)r.push({x:i*w,y:0,w,h});}
-  else if(n===4){const w=W/2,h=H/2;r.push({x:0,y:0,w,h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h});}
+  else if(n===4){const w=W/2,h=H/2;r.push({x:0,y:0,w:h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h});}
   else if(n===5){const w=W/3,h=H/2;let i=0;for(let rr=0;rr<2;rr++)for(let c=0;c<3;c++){if(i<5)r.push({x:c*w,y:rr*h,w,h});i++;}}
   else if(n===6){const w=W/3,h=H/2;for(let rr=0;rr<2;rr++)for(let c=0;c<3;c++)r.push({x:c*w,y:rr*h,w,h});}
   return r;

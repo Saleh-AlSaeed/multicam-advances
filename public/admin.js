@@ -1,26 +1,57 @@
 // ===== لوحة المشرف =====
 
-// تحميل LiveKit UMD ديناميكيًا إن لم يكن محمَّلاً
+// محمّل LiveKit مرن مع سجلّ أخطاء واضح
 let __lkLoading = null;
-async function ensureLivekit(timeoutMs = 12000) {
+async function ensureLivekit(timeoutMs = 15000) {
   if (window.livekit) return window.livekit;
 
-  // حمّل سكربت UMD من المسار المحلي داخل المشروع
-  if (!__lkLoading) {
-    __lkLoading = new Promise((resolve, reject) => {
+  async function loadScript(url) {
+    return new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = '/vendor/livekit-client.umd.min.js';
+      s.src = url;
       s.async = true;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error('LiveKit UMD not found at /vendor/livekit-client.umd.min.js'));
+      s.onload = () => {
+        // أحيانًا يستغرق ربط window.livekit نبضة event loop واحدة
+        setTimeout(() => resolve({ ok: !!window.livekit, url }), 0);
+      };
+      s.onerror = () => reject(new Error('script failed: ' + url));
       document.head.appendChild(s);
     });
   }
 
-  // انتظر حتى يجهز أو ينتهي التوقيت
+  const candidates = [
+    '/vendor/livekit-client.umd.min.js',
+    '/vendor/livekit-client.umd.js',
+    '/vendor/livekit-client.js',
+    // بدائل CDN فقط احتياطًا – لا تعتمد عليها في البناء
+    'https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js',
+    'https://unpkg.com/livekit-client@2.15.7/dist/livekit-client.umd.js',
+  ];
+
+  if (!__lkLoading) {
+    __lkLoading = (async () => {
+      const errors = [];
+      for (const u of candidates) {
+        try {
+          console.debug('[LK loader] trying:', u);
+          const r = await loadScript(u);
+          if (r.ok && window.livekit) {
+            console.debug('[LK loader] loaded from:', r.url);
+            return;
+          }
+          errors.push('loaded but window.livekit missing: ' + u);
+        } catch (e) {
+          errors.push(e.message || String(e));
+        }
+      }
+      throw new Error('All candidates failed:\n' + errors.join('\n'));
+    })();
+  }
+
+  // مهلة قصوى
   await Promise.race([
     __lkLoading,
-    new Promise((_, rej) => setTimeout(() => rej(new Error('LiveKit client did not load')), timeoutMs)),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('LiveKit client did not load (timeout)')), timeoutMs)),
   ]);
 
   if (!window.livekit) throw new Error('LiveKit client did not load');
@@ -33,19 +64,18 @@ function ensureAuth() {
   return s;
 }
 
-// دالة خروج آمنة (تعالج الخطأ السابق: attachLogout is not defined)
+// خروج آمن (بدل attachLogout غير المعرف أحيانًا)
 function safeAttachLogout() {
   const btn = document.getElementById('logoutBtn');
   if (!btn) return;
-  if (typeof window.attachLogout === 'function') {
-    window.attachLogout(btn);
-  } else {
+  if (typeof window.attachLogout === 'function') window.attachLogout(btn);
+  else {
     btn.onclick = null;
     btn.addEventListener('click', (e) => {
       e.preventDefault();
-      try { localStorage.removeItem('session'); } catch(_) {}
+      try { localStorage.removeItem('session'); } catch (_) {}
       location.replace('/');
-    }, { passive:false });
+    }, { passive: false });
   }
 }
 
@@ -62,7 +92,6 @@ let livekitUrl = null;
 let cityRooms = [];
 let composer = null;
 let composite = null;
-let currentSelection = [];
 
 function layoutRects(n, W, H) {
   const rects = [];
@@ -133,7 +162,6 @@ async function connectCityPreviews() {
 
 function openViewModal(){ document.getElementById('viewModal').classList.add('open'); renderSlots(); }
 function closeViewModal(){ document.getElementById('viewModal').classList.remove('open'); }
-
 function renderSlots(){
   const n = parseInt(document.getElementById('camCount').value, 10);
   const slots = document.getElementById('slots');
@@ -160,7 +188,6 @@ function renderSlots(){
     slots.appendChild(field);
   }
 }
-
 function readSelectionFromUI(){
   const slots = [...document.querySelectorAll('#slots fieldset')];
   return slots.map(el => ({
@@ -241,7 +268,6 @@ async function createWatch(){
   const selection = readSelectionFromUI();
   if (selection.length === 0) return alert('اختر عدد الكاميرات');
   const rec = await API.createWatch(selection);
-  composite = rec; currentSelection = selection;
   closeViewModal();
   await startComposer(rec);
   document.getElementById('stopBtn').disabled = false;
@@ -251,7 +277,7 @@ async function createWatch(){
 
 async function applyChanges(){
   if (!composite) return openViewModal();
-  const selection = readSelectionFromUI(); currentSelection = selection;
+  const selection = readSelectionFromUI();
   await fetch(`/api/watch/${composite.id}`, {
     method: 'PUT',
     headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+API.session().token },
@@ -268,7 +294,6 @@ async function stopBroadcast(){
   document.getElementById('stopBtn').disabled = true;
   alert('تم إيقاف البث.');
 }
-
 function openWatchWindow(){
   if (!composite) return alert('أنشئ جلسة مشاهدة أولاً');
   window.open(`/watch.html?id=${composite.id}`, '_blank');
@@ -282,8 +307,6 @@ function setupUI(){
   document.getElementById('goWatchBtn').addEventListener('click', openWatchWindow);
   document.getElementById('applyBtn').addEventListener('click', applyChanges);
   document.getElementById('stopBtn').addEventListener('click', stopBroadcast);
-
-  // إصلاح زر الخروج
   safeAttachLogout();
 }
 
@@ -292,11 +315,10 @@ function setupUI(){
     ensureAuth();
     setupUI();
     renderSlots();
-    // نضمن جاهزية LiveKit قبل إنشاء المعاينات
-    await ensureLivekit();
-    await connectCityPreviews();
+    await ensureLivekit();       // ← أجبر التحميل هنا
+    await connectCityPreviews(); // ← ثم اتصل بالمدن
   } catch (e) {
-    console.error(e);
+    console.error('[admin] ensureLivekit error:', e);
     alert(e.message || e);
   }
 })();

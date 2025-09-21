@@ -19,9 +19,8 @@ async function ensureLivekit(timeoutMs = 15000) {
     });
   }
 
-  const candidates = [
+  const candidate = [
     '/vendor/livekit-client.umd.js'
-    // بدائل CDN فقط احتياطًا – لا تعتمد عليها في البناء
   ];
 
   if (!__lkLoading) {

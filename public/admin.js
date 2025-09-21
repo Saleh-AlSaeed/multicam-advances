@@ -1,4 +1,29 @@
 // ===== لوحة المشرف =====
+
+// انتظر جاهزية livekit (حتى 12 ثانية)
+async function ensureLivekit(timeoutMs = 12000) {
+  if (window.livekit) return window.livekit;
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const t = setInterval(() => {
+      if (window.livekit) {
+        clearInterval(t);
+        resolve(window.livekit);
+      } else if (Date.now() - started > timeoutMs) {
+        clearInterval(t);
+        reject(new Error('LiveKit client did not load'));
+      }
+    }, 50);
+  });
+}
+
+function ensureAuth() {
+  const s = requireAuth();
+  if (!s || s.role !== 'admin') location.href = '/';
+  return s;
+}
+
+// المدن الثابتة
 const CITIES = [
   { label: 'مدينة رقم1', room: 'city-1' },
   { label: 'مدينة رقم2', room: 'city-2' },
@@ -9,26 +34,20 @@ const CITIES = [
 ];
 
 let livekitUrl = null;
-let cityRooms = [];
-let composer = null;
-let composite = null;
+let cityRooms = [];     // {room,label,lkRoom,videoEl,meterEl}
+let composer = null;    // {room, stop()}
+let composite = null;   // السِجل الذي ترجعه /api/create-watch
 let currentSelection = [];
 
-async function ensureLivekit(timeoutMs = 12000) {
-  if (window.livekit) return window.livekit;
-  const started = Date.now();
-  return new Promise((resolve, reject) => {
-    const t = setInterval(() => {
-      if (window.livekit) { clearInterval(t); resolve(window.livekit); }
-      else if (Date.now() - started > timeoutMs) { clearInterval(t); reject(new Error('LiveKit client did not load')); }
-    }, 50);
-  });
-}
-
-function ensureAuth() {
-  const s = requireAuth();
-  if (!s || s.role !== 'admin') location.href = '/';
-  return s;
+function layoutRects(n, W, H) {
+  const rects = [];
+  if (n === 1) rects.push({ x: 0, y: 0, w: W, h: H });
+  else if (n === 2) { const w=W/2,h=H; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h}); }
+  else if (n === 3) { const w=W/3,h=H; for (let i=0;i<3;i++) rects.push({x:i*w,y:0,w,h}); }
+  else if (n === 4) { const w=W/2,h=H/2; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h}); }
+  else if (n === 5) { const w=W/3,h=H/2; let i=0; for (let r=0;r<2;r++) for (let c=0;c<3;c++){ if(i<5) rects.push({x:c*w,y:r*h,w,h}); i++; } }
+  else if (n === 6) { const w=W/3,h=H/2; for (let r=0;r<2;r++) for (let c=0;c<3;c++) rects.push({x:c*w,y:r*h,w,h}); }
+  return rects;
 }
 
 async function connectCityPreviews() {
@@ -47,7 +66,10 @@ async function connectCityPreviews() {
     const id = 'tile-' + item.room;
     const tile = document.createElement('div');
     tile.className = 'video-tile';
-    tile.innerHTML = `<div class="meter"><i></i></div><video id="${id}" autoplay playsinline muted></video><div class="label">${item.label}</div>`;
+    tile.innerHTML = `
+      <div class="meter"><i></i></div>
+      <video id="${id}" autoplay playsinline muted></video>
+      <div class="label">${item.label}</div>`;
     grid.appendChild(tile);
 
     const lkRoom = new Room({ adaptiveStream: true, dynacast: true });
@@ -61,6 +83,7 @@ async function connectCityPreviews() {
     lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
       if (track.kind === 'video') track.attach(videoEl);
       if (track.kind === 'audio') {
+        // مقياس بسيط للصوت
         try {
           const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
           const src = audioCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
@@ -70,13 +93,13 @@ async function connectCityPreviews() {
           const data = new Uint8Array(analyser.frequencyBinCount);
           const loop = () => {
             analyser.getByteTimeDomainData(data);
-            let sum = 0; for (let i = 0; i < data.length; i++) { const v = (data[i]-128)/128; sum += v*v; }
-            const rms = Math.sqrt(sum / data.length);
-            meterFill.style.width = Math.min(100, Math.max(0, Math.round(rms * 200))) + '%';
+            let sum=0; for (let i=0;i<data.length;i++){ const v=(data[i]-128)/128; sum+=v*v; }
+            const rms = Math.sqrt(sum/data.length);
+            meterFill.style.width = Math.min(100, Math.max(0, Math.round(rms*200))) + '%';
             requestAnimationFrame(loop);
           };
           loop();
-        } catch (_) {}
+        } catch(_) {}
       }
     });
 
@@ -84,13 +107,14 @@ async function connectCityPreviews() {
   }
 }
 
-function openViewModal() { document.getElementById('viewModal').classList.add('open'); renderSlots(); }
-function closeViewModal() { document.getElementById('viewModal').classList.remove('open'); }
-function renderSlots() {
+function openViewModal(){ document.getElementById('viewModal').classList.add('open'); renderSlots(); }
+function closeViewModal(){ document.getElementById('viewModal').classList.remove('open'); }
+
+function renderSlots(){
   const n = parseInt(document.getElementById('camCount').value, 10);
   const slots = document.getElementById('slots');
   slots.innerHTML = '';
-  for (let i = 0; i < n; i++) {
+  for (let i=0;i<n;i++){
     const field = document.createElement('fieldset');
     field.innerHTML = `
       <legend>كاميرا رقم ${i+1}</legend>
@@ -112,27 +136,17 @@ function renderSlots() {
     slots.appendChild(field);
   }
 }
-function readSelectionFromUI() {
+
+function readSelectionFromUI(){
   const slots = [...document.querySelectorAll('#slots fieldset')];
   return slots.map(el => ({
     room: el.querySelector('.userSel').value,
     video: el.querySelector('.optVideo').checked,
-    audio: el.querySelector('.optAudio').checked
+    audio: el.querySelector('.optAudio').checked,
   }));
 }
 
-function layoutRects(n, W, H) {
-  const rects = [];
-  if (n === 1) rects.push({ x: 0, y: 0, w: W, h: H });
-  else if (n === 2) { const w=W/2,h=H; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h}); }
-  else if (n === 3) { const w=W/3,h=H; for (let i=0;i<3;i++) rects.push({x:i*w,y:0,w,h}); }
-  else if (n === 4) { const w=W/2,h=H/2; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h}); }
-  else if (n === 5) { const w=W/3,h=H/2; let i=0; for (let r=0;r<2;r++) for (let c=0;c<3;c++){ if(i<5) rects.push({x:c*w,y:r*h,w,h}); i++; } }
-  else if (n === 6) { const w=W/3,h=H/2; for (let r=0;r<2;r++) for (let c=0;c<3;c++) rects.push({x:c*w,y:r*h,w,h}); }
-  return rects;
-}
-
-async function startComposer(rec) {
+async function startComposer(rec){
   const lk = await ensureLivekit();
   const { Room, LocalVideoTrack, LocalAudioTrack } = lk;
 
@@ -179,7 +193,7 @@ async function startComposer(rec) {
 
   const rects = layoutRects(rec.selection.length, W, H);
   let rafId = 0;
-  function draw() {
+  function draw(){
     ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
     videos.forEach((v,i)=>{ const r=rects[i]; if(v&&r){ try{ ctx.drawImage(v,r.x,r.y,r.w,r.h);}catch(_){}}});
     rafId = requestAnimationFrame(draw);
@@ -190,7 +204,7 @@ async function startComposer(rec) {
     room,
     stop: async () => {
       try { cancelAnimationFrame(rafId); } catch(_){}
-      try { [...room.localParticipant.tracks.values()].forEach(pub=>{ try{pub.unpublish();}catch(_){}}); } catch(_){}
+      try { [...room.localParticipant.tracks.values()].forEach(pub => { try{ pub.unpublish(); }catch(_){}}); } catch(_){}
       try { room.disconnect(); } catch(_){}
     }
   };
@@ -199,18 +213,19 @@ async function startComposer(rec) {
 async function stopComposer(){ if (composer?.stop) { await composer.stop(); composer = null; } }
 async function restartComposer(rec, selection){ await stopComposer(); await startComposer({ ...rec, selection }); }
 
-async function createWatch() {
+async function createWatch(){
   const selection = readSelectionFromUI();
   if (selection.length === 0) return alert('اختر عدد الكاميرات');
   const rec = await API.createWatch(selection);
   composite = rec; currentSelection = selection;
-  document.getElementById('goWatchBtn').disabled = false;
-  document.getElementById('stopBtn').disabled = false;
   closeViewModal();
   await startComposer(rec);
+  document.getElementById('stopBtn').disabled = false;
+  document.getElementById('goWatchBtn').disabled = false;
   alert('تم إنشاء غرفة المشاهدة: ' + rec.roomName);
 }
-async function applyChanges() {
+
+async function applyChanges(){
   if (!composite) return openViewModal();
   const selection = readSelectionFromUI(); currentSelection = selection;
   await fetch(`/api/watch/${composite.id}`, {
@@ -221,14 +236,21 @@ async function applyChanges() {
   await restartComposer(composite, selection);
   alert('تم تطبيق التغييرات على البث الحالي.');
 }
-async function stopBroadcast() {
-  if (!composite) return;
-  await fetch(`/api/watch/${composite.id}/stop`, { method: 'POST', headers: { 'Authorization':'Bearer '+API.session().token }});
-  await stopComposer(); document.getElementById('stopBtn').disabled = true; alert('تم إيقاف البث.');
-}
-function openWatchWindow(){ if(!composite) return alert('أنشئ جلسة مشاهدة أولاً'); window.open(`/watch.html?id=${composite.id}`, '_blank'); }
 
-function setupUI() {
+async function stopBroadcast(){
+  if (!composite) return;
+  await fetch(`/api/watch/${composite.id}/stop`, { method:'POST', headers: { 'Authorization':'Bearer '+API.session().token }});
+  await stopComposer();
+  document.getElementById('stopBtn').disabled = true;
+  alert('تم إيقاف البث.');
+}
+
+function openWatchWindow(){
+  if (!composite) return alert('أنشئ جلسة مشاهدة أولاً');
+  window.open(`/watch.html?id=${composite.id}`, '_blank');
+}
+
+function setupUI(){
   document.getElementById('viewModeBtn').addEventListener('click', openViewModal);
   document.getElementById('closeModalBtn').addEventListener('click', closeViewModal);
   document.getElementById('camCount').addEventListener('change', renderSlots);
@@ -236,12 +258,22 @@ function setupUI() {
   document.getElementById('goWatchBtn').addEventListener('click', openWatchWindow);
   document.getElementById('applyBtn').addEventListener('click', applyChanges);
   document.getElementById('stopBtn').addEventListener('click', stopBroadcast);
-  // زر الخروج مربوط من common.js
+
+  // زر الخروج — الاسم الصحيح في common.js هو attachLogout
+  const logoutBtn = document.getElementById('logoutBtn');
+  attachLogout(logoutBtn);
 }
 
 (async function init(){
-  ensureAuth();
-  setupUI();
-  renderSlots();
-  await connectCityPreviews();
+  try {
+    ensureAuth();
+    setupUI();
+    renderSlots();
+    // ✅ انتظر جاهزية livekit قبل معاينات المدن
+    await ensureLivekit();
+    await connectCityPreviews();
+  } catch (e) {
+    console.error(e);
+    alert(e.message || e);
+  }
 })();

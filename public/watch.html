@@ -13,8 +13,13 @@
       }
       .overlay.show { visibility: visible; }
       .controls-bar {
-        position: absolute; right: 12px; bottom: 12px; display: flex; gap: 8px; z-index: 5;
+        position: absolute; right: 12px; bottom: 12px; display: flex; gap: 8px; z-index: 5; flex-wrap: wrap;
       }
+      .select {
+        appearance: none; padding: 10px 12px; border-radius: 10px; border: 1px solid #d1d5db; background: #fff;
+        font-weight: 600; cursor: pointer;
+      }
+      .controls-bar .btn, .controls-bar .select { height: 40px; }
     </style>
   </head>
   <body>
@@ -29,15 +34,23 @@
       <div class="video-tile" style="position:relative">
         <video id="player" autoplay playsinline muted controls></video>
         <div class="label">البث</div>
+
         <div class="controls-bar">
+          <select id="qualitySel" class="select" title="جودة المشاهدة">
+            <option value="auto" selected>Auto</option>
+            <option value="low">Low (حوالي 180p)</option>
+            <option value="medium">Medium (حوالي 360p)</option>
+            <option value="high">High (حوالي 720p)</option>
+          </select>
           <button id="playBtn" class="btn success">تشغيل/إلغاء كتم</button>
           <button id="fsBtn" class="btn">ملء الشاشة</button>
         </div>
+
         <div id="overlay" class="overlay">اضغط "تشغيل" لبدء البث</div>
       </div>
     </div>
 
-    <!-- UMD محلي حسب ما اعتمدنا عليه بالمشروع -->
+    <!-- نستخدم الـ UMD المحلي كما اعتمد المشروع -->
     <script src="/vendor/livekit-client.umd.js"></script>
 
     <script src="/common.js"></script>

@@ -11,8 +11,8 @@
 1) أنسخ `.env.example` إلى `.env` وعدّل مفاتيح LiveKit.
 2) ثبّت الحزم ثم شغّل:
 ```bash
-npm i
-npm run dev
+npm install
+npm start
 ```
 3) افتح `http://localhost:8080`
 

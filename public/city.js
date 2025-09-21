@@ -8,16 +8,29 @@ function ensureAuthCity() {
   return s;
 }
 
-// نضمن جاهزية livekit قبل الاتصال
+// تحميل LiveKit UMD ديناميكيًا إن لم يكن محمَّلاً
+let __lkLoading = null;
 async function ensureLivekit(timeoutMs = 12000) {
   if (window.livekit) return window.livekit;
-  const started = Date.now();
-  return new Promise((resolve, reject) => {
-    const t = setInterval(() => {
-      if (window.livekit) { clearInterval(t); resolve(window.livekit); }
-      else if (Date.now() - started > timeoutMs) { clearInterval(t); reject(new Error('LiveKit client did not load')); }
-    }, 50);
-  });
+
+  if (!__lkLoading) {
+    __lkLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = '/vendor/livekit-client.umd.min.js';
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('LiveKit UMD not found at /vendor/livekit-client.umd.min.js'));
+      document.head.appendChild(s);
+    });
+  }
+
+  await Promise.race([
+    __lkLoading,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('LiveKit client did not load')), timeoutMs)),
+  ]);
+
+  if (!window.livekit) throw new Error('LiveKit client did not load');
+  return window.livekit;
 }
 
 async function listDevices() {
@@ -61,7 +74,6 @@ async function requestPermission() {
 
 async function join() {
   try {
-    // ✅ انتظر تحميل UMD فعليًا قبل أي استخدام
     const lk = await ensureLivekit();
     const { Room, createLocalTracks, LocalVideoTrack } = lk;
 
@@ -109,7 +121,6 @@ async function leave() {
 (function init() {
   ensureAuthCity();
 
-  // زر الخروج من common.js (مع حماية إضافية)
   const btn = document.getElementById('logoutBtn');
   if (typeof window.attachLogout === 'function') {
     window.attachLogout(btn);

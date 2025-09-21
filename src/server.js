@@ -13,10 +13,7 @@ import { AccessToken } from 'livekit-server-sdk';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ملاحظة: عندك بنية مشروع فيها public على جذر المشروع
-// إذا كان هذا الملف تحت src/ فاستخدم الجذر للأعلى
-// لو الملف نفسه في الجذر، يظل ROOT_DIR = __dirname
-const ROOT_DIR = path.join(__dirname, '..'); // عدّل إلى __dirname لو server.js في الجذر
+const ROOT_DIR = path.join(__dirname, '..');
 
 const app = express();
 app.use(express.json());

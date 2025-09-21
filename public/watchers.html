@@ -14,7 +14,6 @@
         <button id="logoutBtn" class="btn danger">خروج</button>
       </div>
     </header>
-
     <div class="container">
       <div class="card">
         <h3>البث المتاح</h3>
@@ -22,22 +21,21 @@
       </div>
     </div>
 
-    <!-- مُحمِّل LiveKit (يحاول: ملف vendor محلي ثم CDN تلقائيًا) -->
+    <!-- تحميل LiveKit UMD محلي فقط -->
     <script src="/vendor/livekit-client.umd.js"></script>
 
     <script src="/common.js"></script>
     <script>
-      (async function () {
+      (async function() {
         const s = requireAuth();
         if (!s || s.role !== 'watcher') { location.href = '/'; return; }
 
-        // زر الخروج من common.js
         const btn = document.getElementById('logoutBtn');
         if (btn) {
           btn.onclick = async (e) => {
             e.preventDefault();
-            try { await API.logout(); } catch (_) {}
-            try { localStorage.removeItem('session'); } catch (_) {}
+            try { await API.logout(); } catch(_) {}
+            try { localStorage.removeItem('session'); } catch(_) {}
             location.replace('/');
           };
         }
@@ -45,7 +43,6 @@
         const data = await API.getActiveWatch();
         const status = document.getElementById('status');
         const nowBtn = document.getElementById('nowBtn');
-
         if (!data) {
           status.textContent = 'لا يوجد بث نشط حاليًا.';
         } else {

@@ -6,30 +6,18 @@ let hasPermission = false;
 
 // انتظار توفر window.livekit (الـ UMD) قبل أي استخدام
 async function ensureLivekit(timeoutMs = 15000) {
-  // جرّب الأسماء المحتملة ووحّدها
   const normalize = () => {
-    const g =
-      window.livekit ||
-      window.LivekitClient ||
-      window.LiveKit ||
-      window.lk ||
-      null;
+    const g = window.livekit || window.LivekitClient || window.LiveKit || window.lk || null;
     if (g && !window.livekit) window.livekit = g;
     return !!window.livekit;
   };
-
   if (normalize()) return window.livekit;
 
   const start = Date.now();
   return new Promise((resolve, reject) => {
     const t = setInterval(() => {
-      if (normalize()) {
-        clearInterval(t);
-        resolve(window.livekit);
-      } else if (Date.now() - start > timeoutMs) {
-        clearInterval(t);
-        reject(new Error('LiveKit client did not load'));
-      }
+      if (normalize()) { clearInterval(t); resolve(window.livekit); }
+      else if (Date.now() - start > timeoutMs) { clearInterval(t); reject(new Error('LiveKit client did not load')); }
     }, 50);
   });
 }
@@ -89,12 +77,13 @@ async function requestPermission() {
 
     const v = document.getElementById('preview');
     v.srcObject = previewStream;
-    v.play?.().catch(()=>{});
+    v.muted = true; // لتفادي سياسات التشغيل
+    v.playsInline = true;
+    await v.play().catch(()=>{});
 
     hasPermission = true;
     status.textContent = 'تم منح الإذن.';
-    // بعد الإذن تظهر أسماء الأجهزة بوضوح
-    await listDevices();
+    await listDevices(); // بعد الإذن تظهر أسماء الأجهزة
   } catch (e) {
     console.error('requestPermission error:', e);
     alert('لم يتم منح الإذن: ' + (e?.message || ''));
@@ -104,7 +93,6 @@ async function requestPermission() {
 async function join() {
   const status = document.getElementById('status');
   try {
-    // تأكد من تحميل UMD
     const lk = await ensureLivekit();
     const { Room, createLocalTracks, LocalVideoTrack } = lk;
 
@@ -121,27 +109,37 @@ async function join() {
       if (!hasPermission) throw new Error('لم يتم منح إذن الكاميرا/المايك');
     }
 
-    // تجهيز التراكات المحلية بناءً على اختيار المستخدم
+    // جهّز التراكات المحلية (حسب اختيار المستخدم)
     const localTracks = await createLocalTracks({
       audio: micId ? { deviceId: micId } : true,
       video: cameraId ? { deviceId: cameraId } : true
     });
 
-    // توكن + اتصال
+    // اتصل بدون تمرير التراكات لتفادي حالات السباق، ثم انشرها صراحةً
     const tk = await API.token(roomName, identity, true, true);
     const room = new Room({});
-    await room.connect(tk.url, tk.token, { tracks: localTracks });
+    await room.connect(tk.url, tk.token);
 
-    // عرض المعاينة من التراك نفسه (لضمان المطابقة)
+    for (const t of localTracks) {
+      await room.localParticipant.publishTrack(t);
+    }
+
+    // عرض المعاينة من التراك نفسه (مطابقة لما يُنشر)
     const v = document.getElementById('preview');
     const vt = localTracks.find(t => t instanceof LocalVideoTrack);
-    if (vt) vt.attach(v);
+    if (vt) {
+      vt.attach(v);
+      v.muted = true;
+      v.playsInline = true;
+      v.autoplay = true;
+      v.play?.().catch(()=>{});
+    }
 
-    // حفظ الريفرنس وتعطيل/تمكين الأزرار
     lkRoom = room;
     document.getElementById('joinBtn').disabled = true;
     document.getElementById('leaveBtn').disabled = false;
     status.textContent = 'متصل.';
+    console.log('[city] connected & published tracks.');
   } catch (e) {
     console.error('join error:', e);
     alert('فشل الاتصال: ' + (e?.message || e));

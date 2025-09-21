@@ -16,7 +16,7 @@ async function ensureLivekit(timeoutMs = 15000) {
     });
   }
 
-  const candidate = [
+  const candidates = [
     '/vendor/livekit-client.umd.js'
   ];
 

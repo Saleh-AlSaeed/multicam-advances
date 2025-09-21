@@ -8,20 +8,6 @@ function ensureAuthCity() {
   return s;
 }
 
-async function ensureLivekit(timeoutMs = 12000) {
-  if (window.livekit && window.livekit.Room) return window.livekit;
-  const started = Date.now();
-  return new Promise((resolve, reject) => {
-    const t = setInterval(() => {
-      if (window.livekit && window.livekit.Room) {
-        clearInterval(t); resolve(window.livekit);
-      } else if (Date.now() - started > timeoutMs) {
-        clearInterval(t); reject(new Error('LiveKit client did not load'));
-      }
-    }, 50);
-  });
-}
-
 async function listDevices() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -62,17 +48,22 @@ async function requestPermission() {
 }
 
 async function join() {
+  // تأكد أن UMD جاهز
+  if (window.livekitReady) { try { await window.livekitReady; } catch(_) {} }
+  if (!window.livekit || !window.livekit.Room || !window.livekit.createLocalTracks) {
+    alert('LiveKit client did not load');
+    return;
+  }
+  const { Room, createLocalTracks, LocalVideoTrack } = window.livekit;
+
+  const s = ensureAuthCity();
+  const roomName = qs('room');
+  const identity = `${s.username}`;
+
+  const cameraId = document.getElementById('camSel').value || undefined;
+  const micId    = document.getElementById('micSel').value || undefined;
+
   try {
-    const lk = await ensureLivekit(); // ← يضمن أن UMD محمّل
-    const { Room, createLocalTracks, LocalVideoTrack } = lk;
-
-    const s = ensureAuthCity();
-    const roomName = qs('room');
-    const identity = `${s.username}`;
-
-    const cameraId = document.getElementById('camSel').value || undefined;
-    const micId    = document.getElementById('micSel').value || undefined;
-
     if (!hasPermission) await requestPermission();
 
     const localTracks = await createLocalTracks({
@@ -107,16 +98,8 @@ async function leave() {
   document.getElementById('status').textContent = 'تمت المغادرة.';
 }
 
-(async function init() {
+(function init() {
   ensureAuthCity();
-
-  const lo = document.getElementById('logoutBtn');
-  if (lo) lo.addEventListener('click', (e)=>{ e.preventDefault(); }, { passive:false });
-
-  // عطّل زر الاتصال حتى نتأكد من وجود livekit
-  const joinBtn = document.getElementById('joinBtn');
-  joinBtn.disabled = true;
-  ensureLivekit().then(() => { joinBtn.disabled = false; }).catch(() => { /* ستظهر رسالة عند الضغط */ });
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
     document.getElementById('status').textContent = 'المتصفح لا يدعم enumerateDevices.';
@@ -125,6 +108,6 @@ async function leave() {
   }
 
   document.getElementById('grantBtn').addEventListener('click', requestPermission, { passive:true });
-  joinBtn.addEventListener('click', join, { passive:false });
+  document.getElementById('joinBtn').addEventListener('click', join, { passive:false });
   document.getElementById('leaveBtn').addEventListener('click', leave, { passive:true });
 })();

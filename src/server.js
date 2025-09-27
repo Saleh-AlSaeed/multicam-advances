@@ -16,17 +16,17 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.join(__dirname, '..');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 app.use(cors());
 
 // ---------- ENV ----------
 const LIVEKIT_URL =
-  process.env.LIVEKIT_URL || 'wss://live-with-talk-h6pf9yqb.livekit.cloud';
+  process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
 const LIVEKIT_API_KEY =
-  process.env.LIVEKIT_API_KEY || 'APINa9ifAhM99tR';
+  process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
 const LIVEKIT_API_SECRET =
-  process.env.LIVEKIT_API_SECRET || 'ZqcFXxQ1bbyye07eonAHG8cKb0RrL3IPIyOQQFUkeztA';
+  process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
 const PORT = process.env.PORT || 8080;
 
 // ---------- STATIC ----------
@@ -75,46 +75,32 @@ const USERS = {
 
 const sessions = new Map(); // token -> { username, role, room, createdAt }
 
-// ---------- تخزين جلسات المشاهدة ----------
+// ---------- التخزين على القرص ----------
 const DATA_DIR = path.join(ROOT_DIR, 'data');
 const WATCH_FILE = path.join(DATA_DIR, 'watchSessions.json');
+const TIMELINES_FILE = path.join(DATA_DIR, 'timelines.json');
 
-function loadWatchSessions() {
+function ensureDataFiles() {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
     if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
-    const txt = fs.readFileSync(WATCH_FILE, 'utf-8');
-    return JSON.parse(txt);
-  } catch {
-    return [];
-  }
-}
-function saveWatchSessions(list) {
-  try {
-    fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf-8');
-  } catch {}
-}
-let watchSessions = loadWatchSessions();
-
-// ---------- تخزين التايملاين ----------
-const TIMELINES_FILE = path.join(DATA_DIR, 'timelines.json');
-
-function loadTimelines() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
     if (!fs.existsSync(TIMELINES_FILE)) fs.writeFileSync(TIMELINES_FILE, '[]', 'utf-8');
-    const txt = fs.readFileSync(TIMELINES_FILE, 'utf-8');
-    return JSON.parse(txt);
-  } catch {
-    return [];
-  }
-}
-function saveTimelines(list) {
-  try {
-    fs.writeFileSync(TIMELINES_FILE, JSON.stringify(list, null, 2), 'utf-8');
   } catch {}
 }
-let timelines = loadTimelines();
+ensureDataFiles();
+
+function loadJson(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { return []; }
+}
+function saveJson(file, data) {
+  try { fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8'); } catch {}
+}
+
+let watchSessions = loadJson(WATCH_FILE);
+let timelines = loadJson(TIMELINES_FILE);
+
+function saveWatchSessions(list) { watchSessions = list || []; saveJson(WATCH_FILE, watchSessions); }
+function saveTimelines(list) { timelines = list || []; saveJson(TIMELINES_FILE, timelines); }
 
 function getTimelineByWatchId(watchId) {
   return (timelines || []).find(t => t.watchId === watchId) || null;
@@ -144,9 +130,6 @@ function authMiddleware(required = null) {
   };
 }
 
-/**
- * توليد توكن LiveKit لحظة الطلب مع مدة قصيرة وهامش clock-skew
- */
 async function buildToken({
   identity,
   roomName,
@@ -343,6 +326,69 @@ app.post('/api/timeline/:watchId/stop', authMiddleware('admin'), (req, res) => {
   base.updatedAt = Date.now();
   upsertTimeline(base);
   res.json({ ok: true });
+});
+
+// ---------- Backup API (Export / Import) ----------
+/**
+ * GET /api/backup  (admin)
+ * يرجع:
+ * {
+ *   version: "1.0",
+ *   exportedAt: 1712345678901,
+ *   watchSessions: [...],
+ *   timelines: [...]
+ * }
+ */
+app.get('/api/backup', authMiddleware('admin'), (req, res) => {
+  res.json({
+    version: '1.0',
+    exportedAt: Date.now(),
+    watchSessions: watchSessions || [],
+    timelines: timelines || []
+  });
+});
+
+/**
+ * POST /api/backup?mode=merge|replace  (admin)
+ * body: { watchSessions?:[], timelines?:[] }
+ * - replace: يستبدل القوائم بالكامل
+ * - merge (افتراضي): يدمج بحسب watchSessions.id و timelines.watchId
+ */
+app.post('/api/backup', authMiddleware('admin'), (req, res) => {
+  const mode = (req.query.mode || 'merge').toString().toLowerCase();
+  const incomingWS = Array.isArray(req.body?.watchSessions) ? req.body.watchSessions : [];
+  const incomingTL = Array.isArray(req.body?.timelines) ? req.body.timelines : [];
+
+  if (mode === 'replace') {
+    saveWatchSessions(incomingWS);
+    saveTimelines(incomingTL);
+    return res.json({ ok: true, mode: 'replace', counts: { watchSessions: watchSessions.length, timelines: timelines.length } });
+  }
+
+  // merge
+  const wsById = new Map((watchSessions || []).map(w => [w.id, w]));
+  for (const w of incomingWS) {
+    if (!w?.id) continue;
+    wsById.set(w.id, w);
+  }
+  const mergedWS = Array.from(wsById.values());
+
+  const tlByKey = new Map((timelines || []).map(t => [t.watchId, t]));
+  for (const t of incomingTL) {
+    if (!t?.watchId) continue;
+    // لو فيه موجود، نستبدله بالوارد (سلوك "merge overwrite")
+    tlByKey.set(t.watchId, t);
+  }
+  const mergedTL = Array.from(tlByKey.values());
+
+  saveWatchSessions(mergedWS);
+  saveTimelines(mergedTL);
+
+  res.json({
+    ok: true,
+    mode: 'merge',
+    counts: { watchSessions: mergedWS.length, timelines: mergedTL.length }
+  });
 });
 
 // Health

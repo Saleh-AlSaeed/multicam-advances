@@ -22,11 +22,11 @@ app.use(cors());
 
 // ---------- ENV ----------
 const LIVEKIT_URL =
-  process.env.LIVEKIT_URL || 'wss://live-steps-multicam-oqg5bhdx.livekit.cloud';
+  process.env.LIVEKIT_URL || 'wss://live-with-talk-h6pf9yqb.livekit.cloud';
 const LIVEKIT_API_KEY =
-  process.env.LIVEKIT_API_KEY || 'APImU9UnS7XgYUj';
+  process.env.LIVEKIT_API_KEY || 'APINa9ifAhM99tR';
 const LIVEKIT_API_SECRET =
-  process.env.LIVEKIT_API_SECRET || 'RbWpteuuel5SkPioIM8fJDT9ZcvSexskRpbybXgURxZA';
+  process.env.LIVEKIT_API_SECRET || 'ZqcFXxQ1bbyye07eonAHG8cKb0RrL3IPIyOQQFUkeztA';
 const PORT = process.env.PORT || 8080;
 
 // ---------- STATIC ----------

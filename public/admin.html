@@ -15,12 +15,6 @@
         <button id="applyBtn" class="btn">تطبيق التغييرات</button>
         <button id="stopBtn" class="btn danger" disabled>إيقاف البث</button>
         <button id="goWatchBtn" class="btn success" disabled>مشاهدة الآن</button>
-
-        <!-- أزرار النسخ الاحتياطي -->
-        <button id="exportBtn" class="btn">تصدير JSON</button>
-        <button id="importBtn" class="btn secondary">استيراد JSON</button>
-        <input id="importFile" type="file" accept="application/json,.json" style="display:none" />
-
         <label class="badge"><input type="checkbox" id="monitorAudio"> تشغيل صوت المعاينة</label>
         <button id="logoutBtn" class="btn danger">خروج</button>
       </div>
@@ -36,6 +30,7 @@
 
     <canvas id="mixerCanvas" class="hidden" width="1920" height="1080"></canvas>
 
+    <!-- إعداد طريقة المشاهدة -->
     <div id="viewModal" class="modal">
       <div class="box">
         <h3>طريقة المشاهدة</h3>
@@ -60,6 +55,7 @@
       </div>
     </div>
 
+    <!-- إدارة الـ Timeline -->
     <div id="timelineModal" class="modal">
       <div class="box">
         <h3>🕒 إدارة الـ Timeline</h3>
@@ -88,7 +84,7 @@
             </div>
             <div>
               <label>المصدر/النص/الكاميرا:</label>
-              <input id="tlSrc" class="input" placeholder="URL أو نص أو city-3" />
+              <input id="tlSrc" class="input" placeholder="URL أو نص أو city-3 للكاميرا" />
             </div>
             <div>
               <label>موضع العرض:</label>
@@ -126,21 +122,16 @@
       </div>
     </div>
 
-    <!-- LiveKit UMD المحلي -->
+    <!-- تحميل LiveKit UMD محلي فقط -->
     <script src="/vendor/livekit-client.umd.js"></script>
     <script>
       window.livekit =
-        window.livekit ||
-        window.LivekitClient ||
-        window.LiveKit ||
-        window.lk || null;
+      window.livekit ||
+      window.LivekitClient ||
+      window.LiveKit ||
+      window.lk || null;
     </script>
-
     <script src="/common.js"></script>
     <script src="/admin.js"></script>
-    <script src="/timeline-admin.js"></script>
-
-    <!-- سكربت النسخ الاحتياطي (جديد) -->
-    <script src="/backup-admin.js"></script>
   </body>
 </html>

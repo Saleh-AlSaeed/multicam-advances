@@ -1,414 +1,314 @@
-// ===== لوحة المشرف (Admin) =====
+// ===== admin.js =====
 
-const CITIES = [
-  { label: "مدينة رقم1", room: "city-1" },
-  { label: "مدينة رقم2", room: "city-2" },
-  { label: "مدينة رقم3", room: "city-3" },
-  { label: "مدينة رقم4", room: "city-4" },
-  { label: "مدينة رقم5", room: "city-5" },
-  { label: "مدينة رقم6", room: "city-6" },
-];
+// حماية الوصول
+(function() {
+  const s = API.session();
+  if (!s || s.role !== 'admin') {
+    location.href = '/';
+    return;
+  }
+})();
 
-let livekitUrl = null;
-let cityRooms = [];
-let composer = null;
-let composite = null;
-let currentSelection = [];
+const state = {
+  camCount: 6,
+  selection: [],     // قائمة الغرف المختارة للعرض
+  activeWatch: null, // {id, roomName, ...}
+  monitorAudio: false,
+};
 
-/* توحيد اسم مكتبة LiveKit على window.livekit */
-function normalizeLivekitGlobal() {
-  const g =
-    window.livekit ||
-    window.LivekitClient ||
-    window.LiveKit ||
-    window.lk ||
-    null;
-  if (g && !window.livekit) window.livekit = g;
-  return !!window.livekit;
-}
+// عناصر DOM
+const previewGrid = document.getElementById('previewGrid');
+const viewModal = document.getElementById('viewModal');
+const btnViewMode = document.getElementById('viewModeBtn');
+const btnApply = document.getElementById('applyBtn');
+const btnStop = document.getElementById('stopBtn');
+const btnGoWatch = document.getElementById('goWatchBtn');
+const btnCloseModal = document.getElementById('closeModalBtn');
+const btnCreateWatch = document.getElementById('createWatchBtn');
+const selCamCount = document.getElementById('camCount');
+const slotsDiv = document.getElementById('slots');
+const monitorAudioChk = document.getElementById('monitorAudio');
 
-async function ensureLivekit(timeoutMs = 15000) {
-  if (normalizeLivekitGlobal()) return window.livekit;
-  const t0 = Date.now();
-  return new Promise((res, rej) => {
-    const t = setInterval(() => {
-      if (normalizeLivekitGlobal()) {
-        clearInterval(t);
-        res(window.livekit);
-      } else if (Date.now() - t0 > timeoutMs) {
-        clearInterval(t);
-        rej(new Error("LiveKit client did not load"));
-      }
-    }, 50);
+// ===== معاينة المدن (تخطيط/مكان فقط؛ بدون اتصال من هنا) =====
+// نعمل مربعات 6 تمثل city-1 .. city-6 للمعاينة الاسمية
+const CITIES = Array.from({length:6}, (_,i)=>`city-${i+1}`);
+
+function renderPreview() {
+  previewGrid.innerHTML = '';
+  // نجعل 6 مربعات ثابتة كمعاينة
+  CITIES.forEach((roomKey, idx) => {
+    const tile = document.createElement('div');
+    tile.className = 'video-tile';
+    tile.style.display = 'flex';
+    tile.style.alignItems = 'center';
+    tile.style.justifyContent = 'center';
+    tile.style.color = '#fff';
+    tile.style.border = '1px solid rgba(255,255,255,.15)';
+    tile.innerHTML = `
+      <div style="text-align:center">
+        <div class="label">${roomKey}</div>
+        <div class="small" style="color:#ddd">Camera/Mic preview placeholder</div>
+      </div>
+    `;
+    previewGrid.appendChild(tile);
   });
 }
 
-function ensureAuth() {
-  const s = requireAuth();
-  if (!s || s.role !== "admin") {
-    location.href = "/";
-    throw new Error("unauthorized");
-  }
-  return s;
-}
+renderPreview();
 
-function safePlayVideo(el) {
-  if (!el) return;
-  el.muted = true;
-  el.playsInline = true;
-  el.autoplay = true;
-  return el.play().catch(() => {});
-}
-
-function attachAudioMeter(track, meterEl) {
-  try {
-    const AC = new (window.AudioContext || window.webkitAudioContext)();
-    const src = AC.createMediaStreamSource(
-      new MediaStream([track.mediaStreamTrack])
-    );
-    const an = AC.createAnalyser();
-    an.fftSize = 256;
-    src.connect(an);
-    const buf = new Uint8Array(an.frequencyBinCount);
-    (function loop() {
-      an.getByteTimeDomainData(buf);
-      let sum = 0;
-      for (let i = 0; i < buf.length; i++) {
-        const v = (buf[i] - 128) / 128;
-        sum += v * v;
-      }
-      const rms = Math.sqrt(sum / buf.length);
-      meterEl.style.width = Math.min(100, Math.round(rms * 200)) + "%";
-      requestAnimationFrame(loop);
-    })();
-  } catch {}
-}
-
-async function connectCityPreviews() {
-  ensureAuth();
-  const lk = await ensureLivekit();
-  const { Room, RoomEvent, Track } = lk;
-
-  const cfg = await API.getConfig();
-  livekitUrl = cfg.LIVEKIT_URL;
-
-  const grid = document.getElementById("previewGrid");
-  grid.innerHTML = "";
-  cityRooms = [];
-
-  for (const item of CITIES) {
-    const id = "tile-" + item.room;
-    const tile = document.createElement("div");
-    tile.className = "video-tile";
-    tile.innerHTML = `
-      <div class="meter"><i></i></div>
-      <video id="${id}" autoplay playsinline muted></video>
-      <div class="label">${item.label}</div>`;
-    grid.appendChild(tile);
-
-    const videoEl = tile.querySelector("video");
-    const meterEl = tile.querySelector(".meter > i");
-
-    // نصل كـ subscriber فقط مع autoSubscribe لتفادي حالات السباق
-    const lkRoom = new Room({
-      adaptiveStream: true,
-      dynacast: true,
-      autoSubscribe: true,
-    });
-    const identity = `admin-preview-${item.room}`;
-    const tk = await API.token(item.room, identity, false, true);
-    await lkRoom.connect(tk.url, tk.token);
-
-    // عندما يُشترك بأي مسار
-    lkRoom.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-      try {
-        if (track.kind === Track.Kind.Video) {
-          track.attach(videoEl);
-          safePlayVideo(videoEl);
-        } else if (track.kind === Track.Kind.Audio) {
-          attachAudioMeter(track, meterEl);
-        }
-      } catch {}
-    });
-
-    // لو كانت المسارات جاهزة قبل التسجيل
-    const attachExisting = () => {
-      lkRoom.remoteParticipants.forEach((p) => {
-        p.trackPublications.forEach((pub) => {
-          const t = pub.track;
-          if (!t) return;
-          if (t.kind === Track.Kind.Video) {
-            t.attach(videoEl);
-            safePlayVideo(videoEl);
-          } else if (t.kind === Track.Kind.Audio) {
-            attachAudioMeter(t, meterEl);
-          }
-        });
-      });
-    };
-    attachExisting();
-    lkRoom.on(RoomEvent.ParticipantConnected, attachExisting);
-
-    cityRooms.push({ ...item, lkRoom, videoEl, meterEl, tileEl: tile });
-  }
-}
-
-/* اختيار التخطيط للرسم */
-function layoutRects(n, W, H) {
-  const r = [];
-  if (n === 1) r.push({ x: 0, y: 0, w: W, h: H });
-  else if (n === 2) {
-    const w = W / 2, h = H;
-    r.push({ x: 0, y: 0, w, h }, { x: w, y: 0, w, h });
-  } else if (n === 3) {
-    const w = W / 3, h = H;
-    for (let i = 0; i < 3; i++) r.push({ x: i * w, y: 0, w, h });
-  } else if (n === 4) {
-    const w = W / 2, h = H / 2;
-    r.push(
-      { x: 0, y: 0, w, h },
-      { x: w, y: 0, w, h },
-      { x: 0, y: h, w, h },
-      { x: w, y: h, w, h }
-    );
-  } else if (n === 5) {
-    const w = W / 3, h = H / 2;
-    let i = 0;
-    for (let rr = 0; rr < 2; rr++)
-      for (let c = 0; c < 3; c++) {
-        if (i < 5) r.push({ x: c * w, y: rr * h, w, h });
-        i++;
-      }
-  } else if (n === 6) {
-    const w = W / 3, h = H / 2;
-    for (let rr = 0; rr < 2; rr++)
-      for (let c = 0; c < 3; c++) r.push({ x: c * w, y: rr * h, w, h });
-  }
-  return r;
-}
-
-/* واجهة تحديد القنوات للمكس */
+// ===== طريقة المشاهدة / اختيار الكاميرات =====
 function openViewModal() {
-  document.getElementById("viewModal").classList.add("open");
-  renderSlots();
+  selCamCount.value = String(state.camCount);
+  buildSlotEditors();
+  viewModal.classList.add('open');
 }
 function closeViewModal() {
-  document.getElementById("viewModal").classList.remove("open");
+  viewModal.classList.remove('open');
 }
-function renderSlots() {
-  const n = parseInt(document.getElementById("camCount").value, 10);
-  const slots = document.getElementById("slots");
-  slots.innerHTML = "";
-  for (let i = 0; i < n; i++) {
-    const f = document.createElement("fieldset");
-    f.innerHTML = `
-      <legend>كاميرا رقم ${i + 1}</legend>
-      <div class="grid cols-2">
-        <div>
-          <label>اختر المستخدم:</label>
-          <select class="input userSel">
-            ${CITIES.map((c) => `<option value="${c.room}">${c.label}</option>`).join("")}
-          </select>
-        </div>
-        <div>
-          <label>خيارات:</label>
-          <div class="controls-row">
-            <label class="badge"><input type="checkbox" class="optVideo" checked> كاميرا</label>
-            <label class="badge"><input type="checkbox" class="optAudio" checked> مايك</label>
-          </div>
-        </div>
-      </div>`;
-    slots.appendChild(f);
+function buildSlotEditors() {
+  const n = Number(selCamCount.value || 6);
+  slotsDiv.innerHTML = '';
+  for (let i=0;i<n;i++){
+    const wrap = document.createElement('div');
+    wrap.className = 'grid cols-2';
+    wrap.innerHTML = `
+      <div>
+        <label>فتحة ${i+1} - غرفة:</label>
+        <select class="input slot-room">
+          ${CITIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label>الوصف (اختياري):</label>
+        <input class="input slot-label" placeholder="مثلاً: مدينة ${i+1}" />
+      </div>
+    `;
+    slotsDiv.appendChild(wrap);
   }
 }
-function readSelectionFromUI() {
-  const slots = [...document.querySelectorAll("#slots fieldset")];
-  return slots.map((el) => ({
-    room: el.querySelector(".userSel").value,
-    video: el.querySelector(".optVideo").checked,
-    audio: el.querySelector(".optAudio").checked,
-  }));
-}
 
-/* بدء المُركِّب (يبث إلى غرفة watch-*) */
-async function startComposer(rec) {
-  const lk = await ensureLivekit();
-  const { Room, LocalVideoTrack, LocalAudioTrack } = lk;
+btnViewMode?.addEventListener('click', openViewModal, { passive:true });
+btnCloseModal?.addEventListener('click', closeViewModal, { passive:true });
+selCamCount?.addEventListener('change', buildSlotEditors, { passive:true });
 
-  const s = API.session();
-  const canvas = document.getElementById("mixerCanvas");
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width,
-    H = canvas.height;
+btnCreateWatch?.addEventListener('click', async () => {
+  try {
+    state.camCount = Number(selCamCount.value || 6);
+    const rooms = Array.from(slotsDiv.querySelectorAll('.slot-room')).map(el=>el.value);
+    const labels = Array.from(slotsDiv.querySelectorAll('.slot-label')).map(el=>el.value.trim());
 
-  const room = new Room({});
-  const tk = await API.token(rec.roomName, `admin-composer-${s.username}`, true, false);
-  await room.connect(tk.url, tk.token);
-
-  // فيديوهات المدن المختارة
-  const videos = [];
-  for (const sel of rec.selection) {
-    const city = cityRooms.find((c) => c.room === sel.room);
-    videos.push(sel.video && city ? city.videoEl : null);
+    // selection: مصفوفة عناصر تمثل الفتحات
+    state.selection = rooms.map((r, i)=>({ roomKey: r, label: labels[i] || r }));
+    if (!state.selection.length) {
+      alert('اختر على الأقل فتحة واحدة');
+      return;
+    }
+    const rec = await API.createWatch(state.selection);
+    state.activeWatch = rec;
+    btnGoWatch.disabled = false;
+    btnStop.disabled = false;
+    alert('تم إنشاء رابط المشاهدة');
+    closeViewModal();
+  } catch (e) {
+    alert('فشل إنشاء جلسة المشاهدة');
   }
+}, { passive:false });
 
-  // مكس صوتي من الغرف المصدر
-  const AC = new (window.AudioContext || window.webkitAudioContext)();
-  const dest = AC.createMediaStreamDestination();
+btnApply?.addEventListener('click', async () => {
+  if (!state.activeWatch) {
+    alert('أنشئ جلسة مشاهدة أولًا');
+    return;
+  }
+  try {
+    // حالياً لا نغير شيء على السيرفر إلا لو أردت تعديل selection:
+    const res = await fetch(`/api/watch/${state.activeWatch.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type':'application/json',
+        'Authorization':'Bearer ' + (API.session()?.token || '')
+      },
+      body: JSON.stringify({ selection: state.selection })
+    });
+    if (!res.ok) throw new Error();
+    alert('تم تطبيق التغييرات');
+  } catch {
+    alert('فشل تطبيق التغييرات');
+  }
+}, { passive:false });
 
-  const addAudioFromRoom = (city) => {
-    try {
-      city?.lkRoom?.remoteParticipants?.forEach((p) => {
-        p.audioTracks && p.audioTracks.forEach
-          ? p.audioTracks.forEach((pub) => {
-              const tr = pub.track?.mediaStreamTrack;
-              if (tr) {
-                const src = AC.createMediaStreamSource(new MediaStream([tr]));
-                src.connect(dest);
-              }
-            })
-          : p.trackPublications?.forEach?.((pub) => {
-              if (pub.kind === "audio" && pub.track?.mediaStreamTrack) {
-                const src = AC.createMediaStreamSource(
-                  new MediaStream([pub.track.mediaStreamTrack])
-                );
-                src.connect(dest);
-              }
-            });
+btnStop?.addEventListener('click', async () => {
+  if (!state.activeWatch) return;
+  if (!confirm('إيقاف البث الحالي؟')) return;
+  try {
+    const r = await fetch(`/api/watch/${state.activeWatch.id}/stop`, {
+      method: 'POST',
+      headers: { 'Authorization':'Bearer ' + (API.session()?.token||'') }
+    });
+    if (!r.ok) throw new Error();
+    alert('تم إيقاف البث');
+  } catch {
+    alert('تعذر الإيقاف');
+  }
+}, { passive:false });
+
+btnGoWatch?.addEventListener('click', () => {
+  if (!state.activeWatch) return;
+  window.open(`/watch.html?id=${state.activeWatch.id}`, '_blank');
+}, { passive:true });
+
+monitorAudioChk?.addEventListener('change', (e) => {
+  state.monitorAudio = !!e.target.checked;
+}, { passive:true });
+
+// ===== زر الخروج =====
+document.getElementById('logoutBtn')?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  try { await API.logout(); } catch(_) {}
+  try { localStorage.removeItem('session'); } catch(_) {}
+  location.replace('/');
+}, { passive:false });
+
+// ===== Timeline UI (Admin) =====
+(function timelineAdmin() {
+  const modal = document.getElementById('timelineModal');
+  const btnOpen = document.getElementById('timelineBtn');
+  const btnClose = document.getElementById('tlCloseBtn');
+  const tlList = document.getElementById('tlList');
+  const lblWatchId = document.getElementById('tlWatchIdLabel');
+
+  const addBtn = document.getElementById('tlAddBtn');
+  const saveBtn = document.getElementById('tlSaveBtn');
+  const startBtn = document.getElementById('tlStartBtn');
+  const stopBtn = document.getElementById('tlStopBtn');
+
+  const fType = document.getElementById('tlType');
+  const fStart = document.getElementById('tlStart');
+  const fDur = document.getElementById('tlDur');
+  const fSrc = document.getElementById('tlSrc');
+  const fPos = document.getElementById('tlPos');
+  const fVol = document.getElementById('tlVol');
+
+  let events = [];            // working copy
+
+  function renderList() {
+    tlList.innerHTML = '';
+    if (!events.length) {
+      tlList.textContent = 'لا توجد أحداث.';
+      return;
+    }
+    events
+      .slice()
+      .sort((a,b)=>a.startOffsetMs-b.startOffsetMs)
+      .forEach(ev => {
+        const div = document.createElement('div');
+        div.style.display = 'flex';
+        div.style.alignItems = 'center';
+        div.style.gap = '8px';
+        div.style.margin = '6px 0';
+        div.innerHTML = `
+          <span class="tag">${ev.type}</span>
+          <span>t+${ev.startOffsetMs}ms</span>
+          <span>dur=${ev.durationMs}ms</span>
+          <code style="direction:ltr">${(ev.payload?.src||ev.payload?.text||ev.payload?.cameraKey||'')}</code>
+          <span class="small">pos=${ev.payload?.position||'center'} vol=${ev.payload?.volume??1}</span>
+          <button class="btn danger" style="margin-inline-start:auto">حذف</button>
+        `;
+        div.querySelector('button').addEventListener('click', async () => {
+          events = events.filter(e => e.id !== ev.id);
+          renderList();
+        }, { passive: true });
+        tlList.appendChild(div);
       });
-    } catch {}
-  };
-
-  for (const sel of rec.selection) {
-    if (!sel.audio) continue;
-    const city = cityRooms.find((c) => c.room === sel.room);
-    addAudioFromRoom(city);
-    // لو وصل صوت لاحقًا
-    city?.lkRoom?.on?.(lk.RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === lk.Track.Kind.Audio && sel.audio) {
-        try {
-          const src = AC.createMediaStreamSource(
-            new MediaStream([track.mediaStreamTrack])
-          );
-          src.connect(dest);
-        } catch {}
-      }
-    });
   }
 
-  // نشر فيديو المكس
-  const vTrack = canvas.captureStream(30).getVideoTracks()[0];
-  const localV = new LocalVideoTrack(vTrack);
-  await room.localParticipant.publishTrack(localV, { name: "composite" });
+  async function openModal() {
+    if (!state.activeWatch) {
+      // حاول العثور على آخر بث نشط إن لم يكن مخزونًا محليًا
+      const active = await API.getActiveWatch();
+      if (!active) {
+        alert('لا توجد جلسة مشاهدة نشطة. أنشئ ارتباط للمشاهدة أولاً.');
+        return;
+      }
+      state.activeWatch = active;
+    }
+    lblWatchId.textContent = 'Watch ID: ' + state.activeWatch.id;
 
-  // نشر الصوت إن وُجد
-  const aTrack = dest.stream.getAudioTracks()[0];
-  if (aTrack) {
-    const localA = new LocalAudioTrack(aTrack);
-    await room.localParticipant.publishTrack(localA, { name: "mixed" });
+    // حمّل التايملاين السابق (إن وجد)
+    try {
+      const t = await (await fetch(`/api/timeline/${state.activeWatch.id}`, {
+        headers: { 'Authorization': 'Bearer ' + (API.session()?.token||'') }
+      })).json();
+      events = Array.isArray(t?.events) ? t.events.slice() : [];
+    } catch { events = []; }
+
+    renderList();
+    modal.classList.add('open');
   }
 
-  const rects = layoutRects(rec.selection.length, W, H);
-  let raf = 0;
-  (function draw() {
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, W, H);
-    videos.forEach((v, i) => {
-      const r = rects[i];
-      if (v && r) {
-        try {
-          ctx.drawImage(v, r.x, r.y, r.w, r.h);
-        } catch {}
-      }
+  function closeModal() {
+    modal.classList.remove('open');
+  }
+
+  function addEvent() {
+    const type = fType.value;
+    const startOffsetMs = Number(fStart.value||0);
+    const durationMs = Number(fDur.value||0);
+    const val = fSrc.value.trim();
+    const pos = fPos.value;
+    const vol = Number(fVol.value||1);
+
+    const payload = { position: pos, volume: vol };
+    if (type === 'text') payload.text = val || '—';
+    else if (type === 'layout') payload.cameraKey = val || '';
+    else payload.src = val;
+
+    const ev = {
+      id: crypto.randomUUID ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(16).slice(2)),
+      type, startOffsetMs, durationMs, payload
+    };
+    events.push(ev);
+    renderList();
+  }
+
+  async function saveAll() {
+    if (!state.activeWatch) return;
+    const r = await fetch(`/api/timeline/${state.activeWatch.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (API.session()?.token||'')
+      },
+      body: JSON.stringify({ events })
     });
-    raf = requestAnimationFrame(draw);
-  })();
+    if (!r.ok) return alert('فشل الحفظ');
+    alert('تم الحفظ');
+  }
 
-  composer = {
-    room,
-    stop: async () => {
-      try {
-        cancelAnimationFrame(raf);
-      } catch {}
-      try {
-        [...room.localParticipant.tracks.values()].forEach((p) => {
-          try {
-            p.unpublish();
-          } catch {}
-        });
-      } catch {}
-      try {
-        room.disconnect();
-      } catch {}
-    },
-  };
-}
+  async function startNow() {
+    if (!state.activeWatch) return;
+    await saveAll();
+    const r = await fetch(`/api/timeline/${state.activeWatch.id}/start`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + (API.session()?.token||'') }
+    });
+    if (!r.ok) return alert('تعذر التشغيل');
+    alert('تم تشغيل الـ Timeline');
+  }
 
-async function stopComposer() {
-  if (composer?.stop) await composer.stop();
-  composer = null;
-}
-async function restartComposer(rec, sel) {
-  await stopComposer();
-  await startComposer({ ...rec, selection: sel });
-}
+  async function stopNow() {
+    if (!state.activeWatch) return;
+    const r = await fetch(`/api/timeline/${state.activeWatch.id}/stop`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + (API.session()?.token||'') }
+    });
+    if (!r.ok) return alert('تعذر الإيقاف');
+    alert('تم إيقاف الـ Timeline');
+  }
 
-async function createWatch() {
-  const selection = readSelectionFromUI();
-  if (!selection.length) return alert("اختر عدد الكاميرات");
-  const rec = await API.createWatch(selection);
-  composite = rec;
-  currentSelection = selection;
-  closeViewModal();
-  await startComposer(rec);
-  document.getElementById("stopBtn").disabled = false;
-  document.getElementById("goWatchBtn").disabled = false;
-  alert("تم إنشاء غرفة المشاهدة: " + rec.roomName);
-}
-async function applyChanges() {
-  if (!composite) return openViewModal();
-  const selection = readSelectionFromUI();
-  currentSelection = selection;
-  await fetch(`/api/watch/${composite.id}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + API.session().token,
-    },
-    body: JSON.stringify({ selection }),
-  });
-  await restartComposer(composite, selection);
-  alert("تم تطبيق التغييرات على البث الحالي.");
-}
-async function stopBroadcast() {
-  if (!composite) return;
-  await fetch(`/api/watch/${composite.id}/stop`, {
-    method: "POST",
-    headers: { Authorization: "Bearer " + API.session().token },
-  });
-  await stopComposer();
-  document.getElementById("stopBtn").disabled = true;
-  alert("تم إيقاف البث.");
-}
-function openWatchWindow() {
-  if (!composite) return alert("أنشئ جلسة مشاهدة أولاً");
-  window.open(`/watch.html?id=${composite.id}`, "_blank");
-}
-
-function setupUI() {
-  document.getElementById("viewModeBtn").addEventListener("click", openViewModal);
-  document.getElementById("closeModalBtn").addEventListener("click", closeViewModal);
-  document.getElementById("camCount").addEventListener("change", renderSlots);
-  document.getElementById("createWatchBtn").addEventListener("click", createWatch);
-  document.getElementById("goWatchBtn").addEventListener("click", openWatchWindow);
-  document.getElementById("applyBtn").addEventListener("click", applyChanges);
-  document.getElementById("stopBtn").addEventListener("click", stopBroadcast);
-  attachLogout(document.getElementById("logoutBtn"));
-}
-
-(async function init() {
-  ensureAuth();
-  setupUI();
-  renderSlots();
-  await connectCityPreviews();
+  btnOpen?.addEventListener('click', openModal, { passive: true });
+  btnClose?.addEventListener('click', closeModal, { passive: true });
+  addBtn?.addEventListener('click', addEvent, { passive: false });
+  saveBtn?.addEventListener('click', saveAll, { passive: false });
+  startBtn?.addEventListener('click', startNow, { passive: false });
+  stopBtn?.addEventListener('click', stopNow, { passive: false });
 })();

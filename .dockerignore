@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log*
+Dockerfile
+.dockerignore
+.env.local
+.env
+.tmp
+.cache
+data/*.json
+!data/.gitkeep

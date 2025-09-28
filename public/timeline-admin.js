@@ -1,4 +1,4 @@
-// ===== Timeline Admin UI (مع رفع ملفات + سجلات تشخيص) =====
+// public/timeline-admin.js
 (function timelineAdmin() {
   const btn = document.getElementById('timelineBtn');
   const modal = document.getElementById('timelineModal');
@@ -25,10 +25,7 @@
   const stopBtn = document.getElementById('tlStopBtn');
   const closeBtn = document.getElementById('tlCloseBtn');
 
-  const state = {
-    watchId: null,
-    events: []
-  };
+  const state = { watchId: null, events: [] };
 
   function requireAdmin() {
     const s = API.session?.();
@@ -63,7 +60,7 @@
       del.onclick = async () => {
         const s = requireAdmin(); if (!s) return;
         try {
-          const r = await fetch(`/api/timeline/${encodeURIComponent(state.watchId)}/events/${encodeURIComponent(ev.id)}`, {
+          const r = await API.apiFetch(`/api/timeline/${encodeURIComponent(state.watchId)}/events/${encodeURIComponent(ev.id)}`, {
             method:'DELETE', headers:{ 'Authorization':'Bearer '+(s.token||'') }
           });
           if (!r.ok) throw new Error('delete failed');
@@ -92,12 +89,9 @@
     uploadMsg.textContent = '';
     const f = fileInp.files?.[0];
     if (!f) { alert('اختر ملفًا أولًا'); return; }
-    const fd = new FormData();
-    fd.append('file', f, f.name);
+    const fd = new FormData(); fd.append('file', f, f.name);
     try {
-      const r = await fetch('/api/upload', {
-        method:'POST', headers:{ 'Authorization':'Bearer '+(s.token||'') }, body: fd
-      });
+      const r = await API.apiFetch('/api/upload', { method:'POST', headers:{ 'Authorization':'Bearer '+(s.token||'') }, body: fd });
       if (!r.ok) throw new Error('failed');
       const out = await r.json();
       srcEl.value = out.url;
@@ -127,7 +121,7 @@
     return { id: uid(), type: t, startOffsetMs: start, durationMs: dur, payload };
   }
 
-  addBtn?.addEventListener('click', () => {
+  document.getElementById('tlAddBtn')?.addEventListener('click', () => {
     const ev = readEventFromForm();
     state.events.push(ev);
     renderList();
@@ -137,7 +131,7 @@
     const s = requireAdmin(); if (!s) return;
     if (!state.watchId) { alert('لا يوجد Watch نشط/محدد'); return; }
     try {
-      const r = await fetch(`/api/timeline/${encodeURIComponent(state.watchId)}`, {
+      const r = await API.apiFetch(`/api/timeline/${encodeURIComponent(state.watchId)}`, {
         method: 'PUT',
         headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + (s.token||'') },
         body: JSON.stringify({ events: state.events })
@@ -154,7 +148,7 @@
     const s = requireAdmin(); if (!s) return;
     if (!state.watchId) { alert('لا يوجد Watch نشط/محدد'); return; }
     try {
-      const r = await fetch(`/api/timeline/${encodeURIComponent(state.watchId)}/start`, {
+      const r = await API.apiFetch(`/api/timeline/${encodeURIComponent(state.watchId)}/start`, {
         method: 'POST',
         headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + (s.token||'') },
         body: JSON.stringify({ startAt: Date.now() })
@@ -171,7 +165,7 @@
     const s = requireAdmin(); if (!s) return;
     if (!state.watchId) { alert('لا يوجد Watch نشط/محدد'); return; }
     try {
-      const r = await fetch(`/api/timeline/${encodeURIComponent(state.watchId)}/stop`, {
+      const r = await API.apiFetch(`/api/timeline/${encodeURIComponent(state.watchId)}/stop`, {
         method: 'POST',
         headers: { 'Authorization':'Bearer ' + (s.token||'') }
       });
@@ -182,7 +176,7 @@
     } catch (e) { alert('تعذر الإيقاف'); }
   });
 
-  closeBtn?.addEventListener('click', () => closeModal(), { passive: true });
+  document.getElementById('tlCloseBtn')?.addEventListener('click', () => closeModal(), { passive: true });
 
   btn?.addEventListener('click', async () => {
     const s = requireAdmin(); if (!s) return;
@@ -192,7 +186,7 @@
       state.watchId = active.id;
       watchIdLabel.textContent = `Watch ID: ${active.id}`;
       try {
-        const r = await fetch(`/api/timeline/${encodeURIComponent(active.id)}`, {
+        const r = await API.apiFetch(`/api/timeline/${encodeURIComponent(active.id)}`, {
           headers: { 'Authorization':'Bearer ' + (s.token||'') }
         });
         const t = r.ok ? await r.json() : null;

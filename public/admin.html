@@ -131,14 +131,14 @@
       </div>
     </div>
 
+    <!-- LiveKit -->
     <script src="/vendor/livekit-client.umd.js"></script>
     <script>
-      window.livekit =
-      window.livekit ||
-      window.LivekitClient ||
-      window.LiveKit ||
-      window.lk || null;
+      window.livekit = window.livekit || window.LivekitClient || window.LiveKit || window.lk || null;
     </script>
+
+    <!-- ترتيب السكربتات مهم: api-base قبل common -->
+    <script src="/api-base.js"></script>
     <script src="/common.js"></script>
     <script src="/admin.js"></script>
     <script src="/timeline-admin.js"></script>

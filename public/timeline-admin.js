@@ -1,4 +1,4 @@
-// ===== Timeline Admin UI (مع رفع ملفات) =====
+// ===== Timeline Admin UI (مع رفع ملفات + سجلات تشخيص) =====
 (function timelineAdmin() {
   const btn = document.getElementById('timelineBtn');
   const modal = document.getElementById('timelineModal');
@@ -27,8 +27,7 @@
 
   const state = {
     watchId: null,
-    events: [],   // {id, type, startOffsetMs, durationMs, payload{ src|text|city, pos, volume }}
-    timeline: null
+    events: []
   };
 
   function requireAdmin() {
@@ -46,57 +45,42 @@
 
   function renderList() {
     listEl.innerHTML = '';
-    if (!state.events.length) {
-      listEl.textContent = 'لا توجد أحداث بعد.';
-      return;
-    }
-    state.events
-      .slice()
-      .sort((a,b)=>a.startOffsetMs - b.startOffsetMs)
-      .forEach(ev => {
-        const row = document.createElement('div');
-        row.style.display='flex';
-        row.style.alignItems='center';
-        row.style.gap='8px';
-        row.style.padding='6px 0';
-        row.style.borderBottom='1px solid #eee';
+    if (!state.events.length) { listEl.textContent = 'لا توجد أحداث بعد.'; return; }
+    state.events.slice().sort((a,b)=>a.startOffsetMs-b.startOffsetMs).forEach(ev => {
+      const row = document.createElement('div');
+      row.style.display='flex'; row.style.alignItems='center';
+      row.style.gap='8px'; row.style.padding='6px 0'; row.style.borderBottom='1px solid #eee';
 
-        const meta = document.createElement('div');
-        meta.className = 'small';
-        meta.textContent =
-          `• ${ev.type} | t=${ev.startOffsetMs}ms dur=${ev.durationMs}ms ` +
-          (ev.payload?.src ? `src="${ev.payload.src}" ` : ev.payload?.city ? `city=${ev.payload.city} ` : ev.payload?.text ? `text="${ev.payload.text}" ` : '') +
-          (ev.payload?.pos ? `pos=${ev.payload.pos} ` : '') +
-          (typeof ev.payload?.volume === 'number' ? `vol=${ev.payload.volume}` : '');
-        const del = document.createElement('button');
-        del.className = 'btn danger';
-        del.textContent = 'حذف';
-        del.style.padding='4px 8px';
-        del.onclick = async () => {
-          const s = requireAdmin(); if (!s) return;
-          if (!state.watchId || !ev.id) return;
-          try {
-            const r = await fetch(`/api/timeline/${encodeURIComponent(state.watchId)}/events/${encodeURIComponent(ev.id)}`, {
-              method: 'DELETE',
-              headers: { 'Authorization':'Bearer ' + (s.token||'') }
-            });
-            if (!r.ok) throw new Error('delete failed');
-            state.events = state.events.filter(e => e.id !== ev.id);
-            renderList();
-          } catch (e) { alert('تعذر حذف الحدث'); }
-        };
+      const meta = document.createElement('div');
+      meta.className = 'small';
+      meta.textContent = `• ${ev.type} | t=${ev.startOffsetMs}ms dur=${ev.durationMs}ms ` +
+        (ev.payload?.src ? `src="${ev.payload.src}" ` : ev.payload?.text ? `text="${ev.payload.text}" ` : '') +
+        (ev.payload?.pos ? `pos=${ev.payload.pos} ` : '') +
+        (typeof ev.payload?.volume === 'number' ? `vol=${ev.payload.volume}` : '');
 
-        row.appendChild(meta);
-        row.appendChild(del);
-        listEl.appendChild(row);
-      });
+      const del = document.createElement('button');
+      del.className = 'btn danger'; del.textContent = 'حذف'; del.style.padding='4px 8px';
+      del.onclick = async () => {
+        const s = requireAdmin(); if (!s) return;
+        try {
+          const r = await fetch(`/api/timeline/${encodeURIComponent(state.watchId)}/events/${encodeURIComponent(ev.id)}`, {
+            method:'DELETE', headers:{ 'Authorization':'Bearer '+(s.token||'') }
+          });
+          if (!r.ok) throw new Error('delete failed');
+          state.events = state.events.filter(e => e.id !== ev.id);
+          renderList();
+        } catch (e) { alert('تعذر حذف الحدث'); }
+      };
+
+      row.appendChild(meta);
+      row.appendChild(del);
+      listEl.appendChild(row);
+    });
   }
 
   function onTypeChanged() {
     const t = typeEl.value;
-    // لغير النص، أظهر رفع الملف
     fileRow.style.display = (t === 'image' || t === 'video' || t === 'audio') ? 'flex' : 'none';
-    // وسم الحقل
     const lbl = document.getElementById('tlSrcLabel');
     lbl.textContent = (t === 'text') ? 'النص' : 'رابط الوسيط (اختياري إذا سترفع ملفًا)';
   }
@@ -112,14 +96,13 @@
     fd.append('file', f, f.name);
     try {
       const r = await fetch('/api/upload', {
-        method:'POST',
-        headers: { 'Authorization':'Bearer ' + (s.token||'') },
-        body: fd
+        method:'POST', headers:{ 'Authorization':'Bearer '+(s.token||'') }, body: fd
       });
       if (!r.ok) throw new Error('failed');
       const out = await r.json();
-      srcEl.value = out.url;   // ضع الـ URL مباشرة
+      srcEl.value = out.url;
       uploadMsg.textContent = 'تم الرفع: ' + out.url;
+      console.log('[timeline] uploaded:', out);
     } catch (e) {
       uploadMsg.textContent = 'فشل الرفع';
       alert('تعذر رفع الملف');
@@ -137,13 +120,9 @@
 
     const payload = { pos };
     if (!Number.isNaN(vol)) payload.volume = Math.max(0, Math.min(1, vol));
-
-    if (t === 'text') { payload.text = src || 'نص'; }
-    else if (t === 'image') { payload.src = src; }
-    else if (t === 'video') { payload.src = src; }
-    else if (t === 'audio') { payload.src = src; }
-    else if (t === 'layout') { payload.hint = src; }
-    if (/^city-\d+$/i.test(src)) { payload.city = src; }
+    if (t === 'text') payload.text = src || 'نص';
+    else if (t === 'image' || t === 'video' || t === 'audio') payload.src = src;
+    else if (t === 'layout') payload.hint = src;
 
     return { id: uid(), type: t, startOffsetMs: start, durationMs: dur, payload };
   }
@@ -165,7 +144,7 @@
       });
       if (!r.ok) throw new Error('save failed');
       const out = await r.json();
-      state.timeline = out;
+      console.log('[timeline] saved events:', out?.events?.length || 0);
       alert('تم حفظ الأحداث.');
       window.dispatchEvent(new CustomEvent('timeline:changed'));
     } catch (e) { alert('تعذر الحفظ'); }
@@ -182,7 +161,7 @@
       });
       if (!r.ok) throw new Error('start failed');
       const out = await r.json();
-      state.timeline = out;
+      console.log('[timeline] START ok. running=', out?.running, 'events=', out?.events?.length || 0);
       alert('تم تشغيل الـ Timeline.');
       window.dispatchEvent(new CustomEvent('timeline:changed'));
     } catch (e) { alert('تعذر تشغيل الـ Timeline'); }
@@ -197,6 +176,7 @@
         headers: { 'Authorization':'Bearer ' + (s.token||'') }
       });
       if (!r.ok) throw new Error('stop failed');
+      console.log('[timeline] STOP ok');
       alert('تم إيقاف الـ Timeline.');
       window.dispatchEvent(new CustomEvent('timeline:changed'));
     } catch (e) { alert('تعذر الإيقاف'); }
@@ -216,7 +196,6 @@
           headers: { 'Authorization':'Bearer ' + (s.token||'') }
         });
         const t = r.ok ? await r.json() : null;
-        state.timeline = t;
         state.events = Array.isArray(t?.events) ? t.events.slice() : [];
       } catch { state.events = []; }
       renderList();

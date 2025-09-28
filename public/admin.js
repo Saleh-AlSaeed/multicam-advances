@@ -1,4 +1,4 @@
-// ===== لوحة المشرف: معاينة غرف المدن + نشر مكسّ 1080p إلى غرفة المشاهدة =====
+// ===== لوحة المشرف: معاينة غرف المدن + نشر مكسّ 1080p + تطبيق Timeline =====
 
 let lk = null;
 const CITY_ROOMS = ['city-1','city-2','city-3','city-4','city-5','city-6'];
@@ -13,7 +13,7 @@ const state = {
     room: null,
     canvas: null,
     ctx: null,
-    fps: 30,                 // رفعت الافتراضي إلى 30fps
+    fps: 30,
     rafId: null,
     layout: [],
     selection: [],
@@ -21,10 +21,15 @@ const state = {
     vTrack: null,            // LocalVideoTrack
     aTrack: null,            // LocalAudioTrack
     audioCtx: null,
-    audioDest: null,         // MediaStreamDestination
+    audioDest: null,
   },
 
-  monitorAudio: false,       // يخص المعاينة فقط
+  // Timeline (يُطبَّق داخل حلقة الرسم)
+  timeline: { running:false, startedAt:null, events:[] },
+  assets: new Map(),         // src -> { kind:'image'|'video', el }
+  tlPollId: null,
+
+  monitorAudio: false,
 };
 
 /* LiveKit loader */
@@ -56,7 +61,7 @@ function h(tag, props={}, children=[]) {
 }
 function safePlay(videoEl, wantUnmute=false) {
   if (!videoEl) return;
-  if (wantUnmute) videoEl.muted = false;
+  if (wantUnmute) videoEl.muted = true; // معاينة فقط
   videoEl.playsInline = true;
   videoEl.autoplay = true;
   videoEl.play().catch(()=>{});
@@ -169,7 +174,6 @@ async function connectRoom(roomName, identity) {
 
 /* ====== Watch publisher (canvas 1080p + audio selection) ====== */
 function computeLayout(n, W, H) {
-  // شبكيّة 1..6 (2x2 ثم 3x2)
   const rects = [];
   if (n <= 1) rects.push({x:0, y:0, w:W, h:H});
   else if (n === 2) { rects.push({x:0,y:0,w:W/2,h:H},{x:W/2,y:0,w:W/2,h:H}); }
@@ -189,13 +193,11 @@ function ensurePubCanvas() {
   const c = document.getElementById('mixerCanvas') || (()=> {
     const el = document.createElement('canvas');
     el.id = 'mixerCanvas';
-    // 1080p
     el.width = 1920; el.height = 1080;
     el.classList.add('hidden');
     document.body.appendChild(el);
     return el;
   })();
-  // تأكد من أبعاد 1080p دائمًا (لو موجود قديم 720p)
   c.width = 1920;
   c.height = 1080;
   state.pub.canvas = c;
@@ -226,25 +228,23 @@ async function startWatchPublisher(selection) {
   state.pub.selection = selection.slice();
   state.pub.layout = computeLayout(selection.length, W, H);
 
-  // ===== فيديو من Canvas 1080p =====
+  // الفيديو
   const stream = state.pub.canvas.captureStream(state.pub.fps);
   const vms = stream.getVideoTracks()[0];
   state.pub.vTrack = new LocalVideoTrack(vms);
 
-  // ===== صوت: مدينة واحدة يحددها المشرف (أو صامت) =====
+  // الصوت المختار فقط
   clearPubAudio();
-  const chosen = state.pub.audioChoice; // roomName أو null
+  const chosen = state.pub.audioChoice;
   if (chosen) {
     const t = state.tracks.get(chosen);
     const ra = t?.audioTrack;
     if (ra?.mediaStreamTrack) {
       state.pub.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       state.pub.audioDest = state.pub.audioCtx.createMediaStreamDestination();
-
       const ms = new MediaStream([ra.mediaStreamTrack]);
       const src = state.pub.audioCtx.createMediaStreamSource(ms);
       src.connect(state.pub.audioDest);
-
       const ams = state.pub.audioDest.stream.getAudioTracks()[0];
       if (ams) state.pub.aTrack = new LocalAudioTrack(ams);
     } else {
@@ -252,7 +252,6 @@ async function startWatchPublisher(selection) {
     }
   }
 
-  // اتصال الغرفة ونشر التراكات
   const tk = await API.token(watchRec.roomName, `mixer-${s.username}`, /*publish*/ true, /*subscribe*/ false);
   state.pub.room = new Room({ adaptiveStream: false, autoSubscribe: false });
   await state.pub.room.connect(tk.url, tk.token);
@@ -261,12 +260,13 @@ async function startWatchPublisher(selection) {
   if (state.pub.aTrack) await state.pub.room.localParticipant.publishTrack(state.pub.aTrack);
   console.log('[admin] ✅ publishing 1080p mix to watch room:', watchRec.roomName, 'audioFrom=', chosen || 'none');
 
-  // حلقة الرسم
+  // حلقة الرسم مع طبقة الـ Timeline
   const draw = () => {
     const { ctx, canvas } = state.pub;
     ctx.fillStyle = '#000';
     ctx.fillRect(0,0,canvas.width,canvas.height);
 
+    // طبقة المدن
     state.pub.selection.forEach((roomName, i) => {
       const r = state.pub.layout[i];
       const v = document.getElementById(`v-${roomName}`);
@@ -277,6 +277,10 @@ async function startWatchPublisher(selection) {
         ctx.fillRect(r.x, r.y, r.w, r.h);
       }
     });
+
+    // طبقة الـ Timeline (نص/صورة/فيديو)
+    renderTimelineOverlays(ctx, canvas);
+
     state.pub.rafId = requestAnimationFrame(draw);
   };
   draw();
@@ -301,6 +305,110 @@ async function stopWatchPublisher() {
   clearPubAudio();
 }
 
+/* ====== Timeline support in admin.js ====== */
+
+function overlayRect(canvasW, canvasH, pos, baseW=0.4, baseH=0.4) {
+  if (pos === 'full') return {x:0,y:0,w:canvasW,h:canvasH};
+  const w = Math.floor(canvasW * baseW);
+  const h = Math.floor(canvasH * baseH);
+  const map = {
+    'center': { x:(canvasW-w)/2, y:(canvasH-h)/2 },
+    'top-left': { x:20, y:20 },
+    'top-right': { x:canvasW-w-20, y:20 },
+    'bottom-left': { x:20, y:canvasH-h-20 },
+    'bottom-right': { x:canvasW-w-20, y:canvasH-h-20 }
+  };
+  const p = map[pos] || map['center'];
+  return { x:p.x, y:p.y, w, h };
+}
+
+function loadAsset(ev) {
+  const src = ev?.payload?.src;
+  if (!src) return null;
+  if (state.assets.has(src)) return state.assets.get(src);
+  if (ev.type === 'image') {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = src;
+    const rec = { kind:'image', el: img };
+    state.assets.set(src, rec);
+    return rec;
+  }
+  if (ev.type === 'video') {
+    const v = document.createElement('video');
+    v.src = src;
+    v.muted = true; v.loop = true; v.autoplay = true; v.playsInline = true;
+    v.play().catch(()=>{});
+    const rec = { kind:'video', el: v };
+    state.assets.set(src, rec);
+    return rec;
+  }
+  return null;
+}
+
+function renderTimelineOverlays(ctx, canvas) {
+  const tl = state.timeline;
+  if (!tl?.running || !Array.isArray(tl.events) || !tl.startedAt) return;
+  const now = Date.now();
+  const t = now - tl.startedAt;
+
+  for (const ev of tl.events) {
+    const start = ev.startOffsetMs|0;
+    const end = start + (ev.durationMs|0);
+    if (t < start || t > end) continue;
+
+    const pos = ev.payload?.pos || 'center';
+    if (ev.type === 'text') {
+      const r = overlayRect(canvas.width, canvas.height, pos, 0.6, 0.24);
+      // خلفية نصف شفافة
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 42px system-ui,Segoe UI,Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const text = (ev.payload?.text || '').slice(0, 200);
+      wrapFillText(ctx, text, r.x + r.w/2, r.y + r.h/2, r.w - 40, 48);
+      ctx.restore();
+    } else if (ev.type === 'image') {
+      const asset = loadAsset(ev);
+      const img = asset?.el;
+      if (img && img.complete) {
+        const r = overlayRect(canvas.width, canvas.height, pos, 0.5, 0.5);
+        try { ctx.drawImage(img, r.x, r.y, r.w, r.h); } catch {}
+      }
+    } else if (ev.type === 'video') {
+      const asset = loadAsset(ev);
+      const v = asset?.el;
+      if (v && v.readyState >= 2) {
+        const r = overlayRect(canvas.width, canvas.height, pos, 0.6, 0.6);
+        try { ctx.drawImage(v, r.x, r.y, r.w, r.h); } catch {}
+      }
+    }
+    // ملاحظة: نوع 'audio' غير ممزوج في مخرج المشاهدة حالياً (الصوت المختار يبقى من مدينة واحدة).
+  }
+}
+
+function wrapFillText(ctx, text, cx, cy, maxWidth, lineHeight) {
+  const words = text.split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    const m = ctx.measureText(test);
+    if (m.width > maxWidth && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  const totalH = lines.length * lineHeight;
+  let y = cy - totalH/2 + lineHeight/2;
+  for (const L of lines) {
+    ctx.fillText(L, cx, y);
+    y += lineHeight;
+  }
+}
+
 /* ====== View mode modal (اختيار مصادر المكس + اختيار الصوت) ====== */
 function openViewModal() {
   const modal = document.getElementById('viewModal');
@@ -321,9 +429,7 @@ function openViewModal() {
         wrap.style.gap = '10px';
 
         const none = document.createElement('label');
-        none.style.display = 'inline-flex';
-        none.style.alignItems = 'center';
-        none.style.gap = '6px';
+        none.className = 'badge';
         const noneInp = document.createElement('input');
         noneInp.type = 'radio';
         noneInp.name = 'audioSel';
@@ -352,16 +458,13 @@ function openViewModal() {
           })()
         ]),
         (() => {
-          // اختيار هذا المصدر ليكون الصوت
           const lbl = document.createElement('label');
           lbl.className = 'badge';
           const r = document.createElement('input');
           r.type = 'radio';
           r.name = 'audioSel';
           r.value = `slot-${i}`;
-          // تأشير تلقائيًا إذا توافق مع الاختيار السابق
           const pre = state.pub.audioChoice;
-          // بعد تعبئة select سنضبط القيمة بدقة في readSelectionFromSlots
           if (pre && CITY_ROOMS[i] === pre) r.checked = true;
           const text = document.createTextNode('استخدم صوت هذا المصدر');
           lbl.appendChild(r);
@@ -412,6 +515,9 @@ function wireTopbar() {
   document.getElementById('applyBtn')?.addEventListener('click', applySelectionToWatch);
   document.getElementById('stopBtn')?.addEventListener('click', stopWatch);
   document.getElementById('goWatchBtn')?.addEventListener('click', goWatchNow);
+
+  // التزامن مع تغييرات التايملاين من المودال
+  window.addEventListener('timeline:changed', refreshTimeline, false);
 }
 
 async function createWatchFromModal() {
@@ -426,6 +532,7 @@ async function createWatchFromModal() {
     alert('تم إنشاء جلسة المشاهدة.');
 
     await startWatchPublisher(selection);
+    await refreshTimeline();
   } catch (e) {
     alert('فشل إنشاء جلسة المشاهدة'); console.error(e);
   }
@@ -472,6 +579,7 @@ async function stopWatch() {
     alert('تعذر الإيقاف'); console.error(e);
   } finally {
     await stopWatchPublisher();
+    clearInterval(state.tlPollId); state.tlPollId = null;
   }
 }
 
@@ -483,6 +591,29 @@ async function goWatchNow() {
   } catch (e) {
     alert('تعذر فتح المشاهدة'); console.error(e);
   }
+}
+
+/* ====== Timeline fetch/poll ====== */
+async function refreshTimeline() {
+  try {
+    if (!state.currentWatch?.id) return;
+    const s = API.session();
+    const r = await fetch('/api/timeline/' + state.currentWatch.id, {
+      headers: { 'Authorization':'Bearer ' + (s?.token||'') }
+    });
+    if (!r.ok) return;
+    const tl = await r.json();
+    state.timeline = {
+      running: !!tl?.running,
+      startedAt: tl?.startedAt || null,
+      events: Array.isArray(tl?.events) ? tl.events : []
+    };
+  } catch {}
+}
+
+function startTimelinePolling() {
+  clearInterval(state.tlPollId);
+  state.tlPollId = setInterval(refreshTimeline, 1500);
 }
 
 /* ====== init ====== */
@@ -508,7 +639,6 @@ async function startPreview() {
   const s = API.session();
   if (!s || s.role !== 'admin') { location.href = '/'; return; }
 
-  // زر خروج (احتياط)
   document.getElementById('logoutBtn')?.addEventListener('click', async (e) => {
     e.preventDefault();
     try { await API.logout(); } catch {}
@@ -525,9 +655,10 @@ async function startPreview() {
       state.currentWatch = active;
       document.getElementById('stopBtn').disabled = false;
       document.getElementById('goWatchBtn').disabled = false;
-      // استأنف نشر المكس للـ selection الحالي
-      state.pub.audioChoice = null; // ابدأ بصامت حتى يختار المشرف لاحقًا
+      state.pub.audioChoice = null; // ابدأ بصامت حتى يختار المشرف
       await startWatchPublisher(active.selection || []);
+      startTimelinePolling();
+      await refreshTimeline();
     }
   } catch {}
 })();

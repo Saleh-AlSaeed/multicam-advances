@@ -21,15 +21,9 @@
       </div>
     </div>
 
-    <!-- تحميل LiveKit UMD محلي فقط -->
     <script src="/vendor/livekit-client.umd.js"></script>
-    <script>
-    window.livekit =
-    window.livekit ||
-    window.LivekitClient ||   // بعض الإصدارات تستخدم هذا
-    window.LiveKit ||         // احتياط لأسماء قديمة
-    window.lk || null;
-    </script>
+    <script>window.livekit = window.livekit || window.LivekitClient || window.LiveKit || window.lk || null;</script>
+    <script src="/api-base.js"></script>
     <script src="/common.js"></script>
     <script>
       (async function() {

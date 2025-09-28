@@ -19,6 +19,8 @@ const ROOT_DIR = path.join(__dirname, '..');
 const app = express();
 app.use(express.json({ limit:'25mb' }));
 app.use(morgan('dev'));
+
+// فعّل CORS للـ API عمومًا
 app.use(cors());
 
 // ---------- ENV ----------
@@ -33,7 +35,7 @@ const PORT = process.env.PORT || 8080;
 // ---------- STATIC ----------
 app.use(express.static(path.join(ROOT_DIR, 'public')));
 
-// تخديم UMD محلياً من node_modules عند المسار /vendor/livekit-client.umd.min.js
+// تخديم UMD محلياً
 const UMD_PATH = path.join(
   ROOT_DIR,
   'node_modules',
@@ -55,7 +57,7 @@ app.get('/vendor/livekit-client.umd.js', (req, res) => {
   }
 });
 
-// --------- بيانات وهمية للمستخدمين ----------
+// --------- مستخدمون وهميون ----------
 const USERS = {
   admin: { password: 'admin123', role: 'admin' },
   'مدينة رقم1': { password: 'City1', role: 'city', room: 'city-1' },
@@ -106,12 +108,23 @@ function saveTimelines(obj) {
 }
 let timelines = loadTimelines();
 
-// تخديم الملفات المرفوعة
-app.use('/uploads', express.static(UPLOAD_DIR, {
-  setHeaders(res) {
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  }
-}));
+// تخديم الملفات المرفوعة مع CORS صريح (مهم للـ Canvas)
+const uploadsCORS = cors({ origin: '*', credentials: false });
+app.use(
+  '/uploads',
+  uploadsCORS,
+  (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    next();
+  },
+  express.static(UPLOAD_DIR, {
+    setHeaders(res) {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+  })
+);
 
 // Multer لرفع الملفات
 const storage = multer.diskStorage({
@@ -140,9 +153,6 @@ function authMiddleware(required = null) {
   };
 }
 
-/**
- * توليد توكن LiveKit
- */
 async function buildToken({ identity, roomName, canPublish = false, canSubscribe = true, metadata = '{}' }) {
   const nowSec = Math.floor(Date.now() / 1000);
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
@@ -259,7 +269,6 @@ app.get('/api/timeline/:watchId', authMiddleware(), (req, res) => {
   const tl = timelines[id] || { watchId: id, events: [], running: false, startedAt: null };
   res.json(tl);
 });
-
 app.put('/api/timeline/:watchId', authMiddleware('admin'), (req, res) => {
   const id = req.params.watchId;
   const events = Array.isArray(req.body?.events) ? req.body.events : [];
@@ -273,7 +282,6 @@ app.put('/api/timeline/:watchId', authMiddleware('admin'), (req, res) => {
   saveTimelines(timelines);
   res.json(timelines[id]);
 });
-
 app.post('/api/timeline/:watchId/start', authMiddleware('admin'), (req, res) => {
   const id = req.params.watchId;
   const startAt = req.body?.startAt || Date.now();
@@ -282,7 +290,6 @@ app.post('/api/timeline/:watchId/start', authMiddleware('admin'), (req, res) => 
   saveTimelines(timelines);
   res.json(timelines[id]);
 });
-
 app.post('/api/timeline/:watchId/stop', authMiddleware('admin'), (req, res) => {
   const id = req.params.watchId;
   const prev = timelines[id] || { watchId: id, events: [] };
@@ -290,7 +297,6 @@ app.post('/api/timeline/:watchId/stop', authMiddleware('admin'), (req, res) => {
   saveTimelines(timelines);
   res.json(timelines[id]);
 });
-
 app.delete('/api/timeline/:watchId/events/:eventId', authMiddleware('admin'), (req, res) => {
   const { watchId, eventId } = req.params;
   const tl = timelines[watchId] || { watchId, events: [] };

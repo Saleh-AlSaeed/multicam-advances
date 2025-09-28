@@ -5,23 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>لوحة المشرف</title>
     <link rel="stylesheet" href="/styles.css" />
+    <style>
+      /* تحسينات بسيطة للمودال */
+      .grid.cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .field-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+      .hint { font-size:12px; color:#6b7280 }
+    </style>
   </head>
   <body>
     <header class="topbar">
       <div>🛠️ لوحة المشرف (admin)</div>
       <div class="toolbar">
-        <button id="timelineBtn" class="btn">Timeline</button>
         <button id="viewModeBtn" class="btn">طريقة المشاهدة</button>
         <button id="applyBtn" class="btn">تطبيق التغييرات</button>
         <button id="stopBtn" class="btn danger" disabled>إيقاف البث</button>
         <button id="goWatchBtn" class="btn success" disabled>مشاهدة الآن</button>
-
-        <!-- أزرار النسخ الاحتياطي -->
-        <button id="exportBtn" class="btn">تصدير JSON</button>
-        <button id="importBtn" class="btn secondary">استيراد JSON</button>
-        <input id="importFile" type="file" accept="application/json,.json" style="display:none" />
-
         <label class="badge"><input type="checkbox" id="monitorAudio"> تشغيل صوت المعاينة</label>
+        <button id="timelineBtn" class="btn">Timeline</button>
         <button id="logoutBtn" class="btn danger">خروج</button>
       </div>
     </header>
@@ -34,12 +34,14 @@
       </div>
     </div>
 
+    <!-- Canvas المُصدِّر للمشاهِدين بدقّة 1080p -->
     <canvas id="mixerCanvas" class="hidden" width="1920" height="1080"></canvas>
 
+    <!-- نافذة اختيار طريقة المشاهدة -->
     <div id="viewModal" class="modal">
       <div class="box">
         <h3>طريقة المشاهدة</h3>
-        <p class="small">اختر عدد الكاميرات للمكس.</p>
+        <p class="small">اختر عدد الكاميرات للمكس وحدد مصادرها، ويمكنك تحديد مصدر الصوت.</p>
         <div>
           <label>عدد الكاميرات:</label>
           <select id="camCount" class="input">
@@ -60,87 +62,92 @@
       </div>
     </div>
 
+    <!-- نافذة إدارة الـ Timeline -->
     <div id="timelineModal" class="modal">
       <div class="box">
-        <h3>🕒 إدارة الـ Timeline</h3>
-        <div class="small" id="tlWatchIdLabel">Watch ID: —</div>
-        <hr/>
-        <fieldset>
-          <legend>إضافة حدث</legend>
-          <div class="grid cols-2">
-            <div>
-              <label>نوع الحدث:</label>
-              <select id="tlType" class="input">
-                <option value="video">Video</option>
-                <option value="audio">Audio</option>
-                <option value="image">Image</option>
-                <option value="text">Text</option>
-                <option value="layout">Layout (hint)</option>
-              </select>
-            </div>
-            <div>
-              <label>بداية بعد (ms):</label>
-              <input id="tlStart" class="input" type="number" value="0" />
-            </div>
-            <div>
-              <label>المدة (ms):</label>
-              <input id="tlDur" class="input" type="number" value="10000" />
-            </div>
-            <div>
-              <label>المصدر/النص/الكاميرا:</label>
-              <input id="tlSrc" class="input" placeholder="URL أو نص أو city-3" />
-            </div>
-            <div>
-              <label>موضع العرض:</label>
-              <select id="tlPos" class="input">
-                <option value="full">Full</option>
-                <option value="center" selected>Center</option>
-                <option value="top-left">Top-Left</option>
-                <option value="top-right">Top-Right</option>
-                <option value="bottom-left">Bottom-Left</option>
-                <option value="bottom-right">Bottom-Right</option>
-              </select>
-            </div>
-            <div>
-              <label>شفافية/صوت (0..1):</label>
-              <input id="tlVol" class="input" type="number" step="0.05" value="1" />
+        <h3>إدارة الـ Timeline</h3>
+        <div id="tlWatchIdLabel" class="small"></div>
+
+        <div class="grid cols-2">
+          <div>
+            <label>نوع الحدث</label>
+            <select id="tlType" class="input">
+              <option value="text" selected>Text</option>
+              <option value="image">Image</option>
+              <option value="video">Video</option>
+              <option value="audio">Audio (تشغيل مقطع)</option>
+              <option value="layout">Layout hint</option>
+            </select>
+          </div>
+          <div>
+            <label>الموضع</label>
+            <select id="tlPos" class="input">
+              <option value="center" selected>Center</option>
+              <option value="top-left">Top Left</option>
+              <option value="top-right">Top Right</option>
+              <option value="bottom-left">Bottom Left</option>
+              <option value="bottom-right">Bottom Right</option>
+              <option value="full">Full</option>
+            </select>
+          </div>
+
+          <div>
+            <label>البـدء (ms)</label>
+            <input id="tlStart" class="input" type="number" min="0" value="0" />
+          </div>
+          <div>
+            <label>المدة (ms)</label>
+            <input id="tlDur" class="input" type="number" min="0" value="3000" />
+          </div>
+
+          <div class="field-row" style="grid-column: span 2;">
+            <div style="flex:1">
+              <label id="tlSrcLabel">النص أو رابط الوسيط</label>
+              <input id="tlSrc" class="input" placeholder="أدخل نصًا أو رابط صورة/فيديو/صوت" />
+              <div class="hint">يمكن تركه فارغًا إذا ستستخدم زر “رفع الملف”.</div>
             </div>
           </div>
-          <div class="toolbar">
-            <button id="tlAddBtn" class="btn">إضافة الحدث</button>
+
+          <div id="tlFileRow" class="field-row" style="grid-column: span 2; display:none">
+            <input id="tlFile" type="file" class="input" />
+            <button id="tlUploadBtn" class="btn secondary">رفع الملف</button>
+            <span id="tlUploadMsg" class="small"></span>
           </div>
-        </fieldset>
+
+          <div style="grid-column: span 2;">
+            <label>مستوى الصوت (للصوت/الفيديو)</label>
+            <input id="tlVol" class="input" type="number" step="0.1" min="0" max="1" value="1" />
+          </div>
+        </div>
 
         <hr/>
-        <div>
-          <h4>الأحداث:</h4>
-          <div id="tlList" class="small"></div>
-        </div>
-        <hr/>
         <div class="toolbar">
+          <button id="tlAddBtn" class="btn">إضافة للجدول</button>
           <button id="tlSaveBtn" class="btn success">حفظ</button>
           <button id="tlStartBtn" class="btn">تشغيل الآن</button>
-          <button id="tlStopBtn" class="btn danger">إيقاف 🛑 Timeline</button>
+          <button id="tlStopBtn" class="btn danger">إيقاف</button>
           <button id="tlCloseBtn" class="btn secondary">إغلاق</button>
         </div>
+
+        <hr/>
+        <div id="tlList" class="small">لا توجد أحداث بعد.</div>
       </div>
     </div>
 
-    <!-- LiveKit UMD المحلي -->
+    <!-- LiveKit UMD محلي فقط -->
     <script src="/vendor/livekit-client.umd.js"></script>
     <script>
-      window.livekit =
-        window.livekit ||
-        window.LivekitClient ||
-        window.LiveKit ||
-        window.lk || null;
+    window.livekit =
+    window.livekit ||
+    window.LivekitClient ||
+    window.LiveKit ||
+    window.lk || null;
     </script>
 
+    <!-- سكربتات -->
     <script src="/common.js"></script>
     <script src="/admin.js"></script>
     <script src="/timeline-admin.js"></script>
-
-    <!-- سكربت النسخ الاحتياطي (جديد) -->
     <script src="/backup-admin.js"></script>
   </body>
 </html>

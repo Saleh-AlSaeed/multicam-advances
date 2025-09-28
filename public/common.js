@@ -1,15 +1,19 @@
-// ===== API Base + helpers =====
-(function(){
-  const raw = (window.API_BASE ?? '');
-  const base = (''+raw).replace(/\/+$/,''); // بدون / في النهاية
-  window.apiFetch = function apiFetch(path, opts) {
-    const url = base + path;
-    return fetch(url, opts);
-  };
-})();
+// public/common.js
+
+function apiUrl(path) {
+  const base = (window.API_BASE || '').trim();
+  const p = path.startsWith('/') ? path : '/' + path;
+  return base ? (base + p) : p;
+}
+async function apiFetch(path, init) {
+  return fetch(apiUrl(path), init);
+}
 
 const API = {
+  apiFetch, // متاح للاستخدام من سكربتات أخرى
+
   async getConfig() { const r = await apiFetch('/api/config'); return r.json(); },
+
   async login(username, password) {
     const r = await apiFetch('/api/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -20,10 +24,12 @@ const API = {
     localStorage.setItem('session', JSON.stringify(data));
     return data;
   },
+
   session() {
     try { const s = localStorage.getItem('session'); return s ? JSON.parse(s) : null; }
     catch { return null; }
   },
+
   async logout() {
     const s = API.session();
     if (!s) return;
@@ -31,6 +37,7 @@ const API = {
       await apiFetch('/api/logout', { method:'POST', headers: { 'Authorization': 'Bearer ' + (s?.token || '') } });
     } catch(_) {}
   },
+
   async token(roomName, identity, publish=false, subscribe=true) {
     const s = API.session();
     const r = await apiFetch('/api/token', {
@@ -41,6 +48,7 @@ const API = {
     if (!r.ok) throw new Error('فشل إنشاء التوكن');
     return r.json();
   },
+
   async createWatch(selection) {
     const s = API.session();
     const r = await apiFetch('/api/create-watch', {
@@ -51,11 +59,13 @@ const API = {
     if (!r.ok) throw new Error('فشل إنشاء جلسة المشاهدة');
     return r.json();
   },
+
   async getActiveWatch() {
     const s = API.session();
     const r = await apiFetch('/api/watch/active', { headers: { 'Authorization':'Bearer ' + (s?.token || '') } });
     return r.json();
   },
+
   async getWatch(id) {
     const s = API.session();
     const r = await apiFetch('/api/watch/' + id, { headers: { 'Authorization':'Bearer ' + (s?.token || '') } });

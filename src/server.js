@@ -6,6 +6,7 @@ import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
+import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { AccessToken } from 'livekit-server-sdk';
 
@@ -16,17 +17,17 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.join(__dirname, '..');
 
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit:'25mb' }));
 app.use(morgan('dev'));
 app.use(cors());
 
 // ---------- ENV ----------
 const LIVEKIT_URL =
-  process.env.LIVEKIT_URL || 'wss://live-with-talk-h6pf9yqb.livekit.cloud';
+  process.env.LIVEKIT_URL || 'wss://multicam-national-day-htyhphzo.livekit.cloud';
 const LIVEKIT_API_KEY =
-  process.env.LIVEKIT_API_KEY || 'APINa9ifAhM99tR';
+  process.env.LIVEKIT_API_KEY || 'APITPYikfLT2XJX';
 const LIVEKIT_API_SECRET =
-  process.env.LIVEKIT_API_SECRET || 'ZqcFXxQ1bbyye07eonAHG8cKb0RrL3IPIyOQQFUkeztA';
+  process.env.LIVEKIT_API_SECRET || 'yUhYSz9TWBL69SSP8H0kOK6y8XWRGFDeBBk93WYCzJC';
 const PORT = process.env.PORT || 8080;
 
 // ---------- STATIC ----------
@@ -40,16 +41,14 @@ const UMD_PATH = path.join(
   'dist',
   'livekit-client.umd.min.js'
 );
-app.get('/vendor/livekit-client.umd.min.js', (req, res) => {
+app.get('/vendor/livekit-client.umd.js', (req, res) => {
   try {
     if (fs.existsSync(UMD_PATH)) {
       res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
       res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
       res.sendFile(UMD_PATH);
     } else {
-      res
-        .status(500)
-        .send('// LiveKit UMD not found in node_modules (livekit-client).');
+      res.status(500).send('// LiveKit UMD not found in node_modules (livekit-client).');
     }
   } catch (e) {
     res.status(500).send('// Failed to serve LiveKit UMD.');
@@ -75,43 +74,54 @@ const USERS = {
 
 const sessions = new Map(); // token -> { username, role, room, createdAt }
 
-// ---------- التخزين على القرص ----------
+// ---------- تخزين جلسات المشاهدة + التايملاين ----------
 const DATA_DIR = path.join(ROOT_DIR, 'data');
 const WATCH_FILE = path.join(DATA_DIR, 'watchSessions.json');
-const TIMELINES_FILE = path.join(DATA_DIR, 'timelines.json');
+const TL_FILE = path.join(DATA_DIR, 'timelines.json');
+const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 
-function ensureDataFiles() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-    if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
-    if (!fs.existsSync(TIMELINES_FILE)) fs.writeFileSync(TIMELINES_FILE, '[]', 'utf-8');
-  } catch {}
+function ensureDirs() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive:true });
+  if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive:true });
+  if (!fs.existsSync(WATCH_FILE)) fs.writeFileSync(WATCH_FILE, '[]', 'utf-8');
+  if (!fs.existsSync(TL_FILE)) fs.writeFileSync(TL_FILE, '{}', 'utf-8');
 }
-ensureDataFiles();
+ensureDirs();
 
-function loadJson(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { return []; }
+function loadWatchSessions() {
+  try { return JSON.parse(fs.readFileSync(WATCH_FILE, 'utf-8')); }
+  catch { return []; }
 }
-function saveJson(file, data) {
-  try { fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8'); } catch {}
+function saveWatchSessions(list) {
+  try { fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf-8'); } catch {}
 }
+let watchSessions = loadWatchSessions();
 
-let watchSessions = loadJson(WATCH_FILE);
-let timelines = loadJson(TIMELINES_FILE);
-
-function saveWatchSessions(list) { watchSessions = list || []; saveJson(WATCH_FILE, watchSessions); }
-function saveTimelines(list) { timelines = list || []; saveJson(TIMELINES_FILE, timelines); }
-
-function getTimelineByWatchId(watchId) {
-  return (timelines || []).find(t => t.watchId === watchId) || null;
+function loadTimelines() {
+  try { return JSON.parse(fs.readFileSync(TL_FILE, 'utf-8')); }
+  catch { return {}; }
 }
-function upsertTimeline(obj) {
-  const idx = (timelines || []).findIndex(t => t.watchId === obj.watchId);
-  if (idx === -1) timelines.push(obj);
-  else timelines[idx] = obj;
-  saveTimelines(timelines);
-  return obj;
+function saveTimelines(obj) {
+  try { fs.writeFileSync(TL_FILE, JSON.stringify(obj, null, 2), 'utf-8'); } catch {}
 }
+let timelines = loadTimelines();
+
+// تخديم الملفات المرفوعة
+app.use('/uploads', express.static(UPLOAD_DIR, {
+  setHeaders(res) {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
+
+// Multer لرفع الملفات
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    cb(null, `${uuidv4()}${ext}`);
+  }
+});
+const upload = multer({ storage });
 
 // ---------- Helpers ----------
 function authMiddleware(required = null) {
@@ -130,13 +140,10 @@ function authMiddleware(required = null) {
   };
 }
 
-async function buildToken({
-  identity,
-  roomName,
-  canPublish = false,
-  canSubscribe = true,
-  metadata = '{}'
-}) {
+/**
+ * توليد توكن LiveKit
+ */
+async function buildToken({ identity, roomName, canPublish = false, canSubscribe = true, metadata = '{}' }) {
   const nowSec = Math.floor(Date.now() / 1000);
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity,
@@ -144,15 +151,7 @@ async function buildToken({
     nbf: nowSec - 5,
     metadata
   });
-
-  at.addGrant({
-    roomJoin: true,
-    room: roomName,
-    canPublish,
-    canSubscribe,
-    canPublishData: true
-  });
-
+  at.addGrant({ roomJoin: true, room: roomName, canPublish, canSubscribe, canPublishData: true });
   return await at.toJwt();
 }
 
@@ -246,149 +245,59 @@ app.get('/api/watch/:id', authMiddleware(), (req, res) => {
   res.json(item);
 });
 
-// ---------- Timeline API ----------
+// ===== رفع وسائط للتايملاين =====
+app.post('/api/upload', authMiddleware('admin'), upload.single('file'), (req, res) => {
+  const f = req.file;
+  if (!f) return res.status(400).json({ error: 'no_file' });
+  const url = '/uploads/' + f.filename;
+  res.json({ url, name: f.originalname, size: f.size, mime: f.mimetype });
+});
+
+// ===== Timeline API =====
 app.get('/api/timeline/:watchId', authMiddleware(), (req, res) => {
-  const t = getTimelineByWatchId(req.params.watchId);
-  res.json(t || null);
+  const id = req.params.watchId;
+  const tl = timelines[id] || { watchId: id, events: [], running: false, startedAt: null };
+  res.json(tl);
 });
 
 app.put('/api/timeline/:watchId', authMiddleware('admin'), (req, res) => {
-  const watchId = req.params.watchId;
-  const base = getTimelineByWatchId(watchId) || {
-    watchId,
-    active: false,
-    startAt: null,
-    events: [],
-    updatedAt: Date.now(),
-    createdAt: Date.now()
+  const id = req.params.watchId;
+  const events = Array.isArray(req.body?.events) ? req.body.events : [];
+  const prev = timelines[id] || {};
+  timelines[id] = {
+    watchId: id,
+    events,
+    running: !!prev.running,
+    startedAt: prev.startedAt || null
   };
-  base.events = Array.isArray(req.body?.events) ? req.body.events : base.events;
-  base.updatedAt = Date.now();
-  upsertTimeline(base);
-  res.json(base);
-});
-
-app.post('/api/timeline/:watchId/events', authMiddleware('admin'), (req, res) => {
-  const watchId = req.params.watchId;
-  const base = getTimelineByWatchId(watchId) || {
-    watchId,
-    active: false,
-    startAt: null,
-    events: [],
-    updatedAt: Date.now(),
-    createdAt: Date.now()
-  };
-  const ev = req.body || {};
-  if (!ev.id) ev.id = uuidv4();
-  if (typeof ev.type !== 'string') return res.status(400).json({ error: 'type required' });
-  if (typeof ev.startOffsetMs !== 'number') ev.startOffsetMs = 0;
-  if (typeof ev.durationMs !== 'number') ev.durationMs = 0;
-  if (typeof ev.payload !== 'object') ev.payload = {};
-  base.events.push(ev);
-  base.updatedAt = Date.now();
-  upsertTimeline(base);
-  res.json(ev);
-});
-
-app.delete('/api/timeline/:watchId/events/:eventId', authMiddleware('admin'), (req, res) => {
-  const watchId = req.params.watchId;
-  const eventId = req.params.eventId;
-  const base = getTimelineByWatchId(watchId);
-  if (!base) return res.status(404).json({ error: 'not_found' });
-  base.events = (base.events || []).filter(e => e.id !== eventId);
-  base.updatedAt = Date.now();
-  upsertTimeline(base);
-  res.json({ ok: true });
+  saveTimelines(timelines);
+  res.json(timelines[id]);
 });
 
 app.post('/api/timeline/:watchId/start', authMiddleware('admin'), (req, res) => {
-  const watchId = req.params.watchId;
-  const base = getTimelineByWatchId(watchId) || {
-    watchId,
-    active: false,
-    startAt: null,
-    events: [],
-    updatedAt: Date.now(),
-    createdAt: Date.now()
-  };
-  base.active = true;
-  base.startAt = typeof req.body?.startAt === 'number' ? req.body.startAt : Date.now();
-  base.updatedAt = Date.now();
-  upsertTimeline(base);
-  res.json(base);
+  const id = req.params.watchId;
+  const startAt = req.body?.startAt || Date.now();
+  const prev = timelines[id] || { watchId: id, events: [] };
+  timelines[id] = { ...prev, running: true, startedAt: startAt };
+  saveTimelines(timelines);
+  res.json(timelines[id]);
 });
 
 app.post('/api/timeline/:watchId/stop', authMiddleware('admin'), (req, res) => {
-  const watchId = req.params.watchId;
-  const base = getTimelineByWatchId(watchId);
-  if (!base) return res.status(404).json({ error: 'not_found' });
-  base.active = false;
-  base.updatedAt = Date.now();
-  upsertTimeline(base);
+  const id = req.params.watchId;
+  const prev = timelines[id] || { watchId: id, events: [] };
+  timelines[id] = { ...prev, running: false };
+  saveTimelines(timelines);
+  res.json(timelines[id]);
+});
+
+app.delete('/api/timeline/:watchId/events/:eventId', authMiddleware('admin'), (req, res) => {
+  const { watchId, eventId } = req.params;
+  const tl = timelines[watchId] || { watchId, events: [] };
+  tl.events = (tl.events || []).filter(e => e.id !== eventId);
+  timelines[watchId] = tl;
+  saveTimelines(timelines);
   res.json({ ok: true });
-});
-
-// ---------- Backup API (Export / Import) ----------
-/**
- * GET /api/backup  (admin)
- * يرجع:
- * {
- *   version: "1.0",
- *   exportedAt: 1712345678901,
- *   watchSessions: [...],
- *   timelines: [...]
- * }
- */
-app.get('/api/backup', authMiddleware('admin'), (req, res) => {
-  res.json({
-    version: '1.0',
-    exportedAt: Date.now(),
-    watchSessions: watchSessions || [],
-    timelines: timelines || []
-  });
-});
-
-/**
- * POST /api/backup?mode=merge|replace  (admin)
- * body: { watchSessions?:[], timelines?:[] }
- * - replace: يستبدل القوائم بالكامل
- * - merge (افتراضي): يدمج بحسب watchSessions.id و timelines.watchId
- */
-app.post('/api/backup', authMiddleware('admin'), (req, res) => {
-  const mode = (req.query.mode || 'merge').toString().toLowerCase();
-  const incomingWS = Array.isArray(req.body?.watchSessions) ? req.body.watchSessions : [];
-  const incomingTL = Array.isArray(req.body?.timelines) ? req.body.timelines : [];
-
-  if (mode === 'replace') {
-    saveWatchSessions(incomingWS);
-    saveTimelines(incomingTL);
-    return res.json({ ok: true, mode: 'replace', counts: { watchSessions: watchSessions.length, timelines: timelines.length } });
-  }
-
-  // merge
-  const wsById = new Map((watchSessions || []).map(w => [w.id, w]));
-  for (const w of incomingWS) {
-    if (!w?.id) continue;
-    wsById.set(w.id, w);
-  }
-  const mergedWS = Array.from(wsById.values());
-
-  const tlByKey = new Map((timelines || []).map(t => [t.watchId, t]));
-  for (const t of incomingTL) {
-    if (!t?.watchId) continue;
-    // لو فيه موجود، نستبدله بالوارد (سلوك "merge overwrite")
-    tlByKey.set(t.watchId, t);
-  }
-  const mergedTL = Array.from(tlByKey.values());
-
-  saveWatchSessions(mergedWS);
-  saveTimelines(mergedTL);
-
-  res.json({
-    ok: true,
-    mode: 'merge',
-    counts: { watchSessions: mergedWS.length, timelines: mergedTL.length }
-  });
 });
 
 // Health

@@ -1,14 +1,13 @@
-// ===== لوحة المشرف: معاينة غرف المدن + نشر مكسّ 1080p + تطبيق Timeline =====
+// ===== لوحة المشرف: معاينة غرف المدن + نشر مكسّ 1080p + Timeline (مع CORS للوسائط) =====
 
 let lk = null;
 const CITY_ROOMS = ['city-1','city-2','city-3','city-4','city-5','city-6'];
 
 const state = {
-  rooms: new Map(),          // roomName -> { room }
-  tracks: new Map(),         // roomName -> { videoEl, audioTrack, videoTrack }
-  currentWatch: null,        // { id, roomName, selection, active }
+  rooms: new Map(),
+  tracks: new Map(),
+  currentWatch: null,
 
-  // ناشر المكسّ إلى غرفة المشاهدة
   pub: {
     room: null,
     canvas: null,
@@ -17,22 +16,21 @@ const state = {
     rafId: null,
     layout: [],
     selection: [],
-    audioChoice: null,       // roomName للصوت المختار أو null = صامت
-    vTrack: null,            // LocalVideoTrack
-    aTrack: null,            // LocalAudioTrack
+    audioChoice: null,
+    vTrack: null,
+    aTrack: null,
     audioCtx: null,
     audioDest: null,
   },
 
-  // Timeline (يُطبَّق داخل حلقة الرسم)
   timeline: { running:false, startedAt:null, events:[] },
-  assets: new Map(),         // src -> { kind:'image'|'video', el }
+  assets: new Map(),   // src -> { kind, el }
   tlPollId: null,
 
   monitorAudio: false,
 };
 
-/* LiveKit loader */
+/* LiveKit */
 function normalizeLivekit() {
   const g = window.livekit || window.LivekitClient || window.LiveKit || window.lk || null;
   if (g && !window.livekit) window.livekit = g;
@@ -61,13 +59,13 @@ function h(tag, props={}, children=[]) {
 }
 function safePlay(videoEl, wantUnmute=false) {
   if (!videoEl) return;
-  if (wantUnmute) videoEl.muted = true; // معاينة فقط
+  if (wantUnmute) videoEl.muted = true;
   videoEl.playsInline = true;
   videoEl.autoplay = true;
   videoEl.play().catch(()=>{});
 }
 
-/* ====== Grid preview UI ====== */
+/* Preview grid */
 function buildPreviewGrid() {
   const grid = document.getElementById('previewGrid');
   if (!grid) return;
@@ -87,7 +85,7 @@ function attachVideo(roomName, track) {
   if (!v) return;
   try {
     track.attach(v);
-    v.muted = true; // autoplay
+    v.muted = true;
     safePlay(v, false);
     const t = state.tracks.get(roomName) || {};
     t.videoEl = v;
@@ -98,19 +96,15 @@ function attachVideo(roomName, track) {
     console.warn(`[admin] attachVideo failed for ${roomName}:`, e);
   }
 }
-
 function attachAudio(roomName, track) {
   try {
     const t = state.tracks.get(roomName) || {};
-    t.audioTrack = track; // RemoteAudioTrack
+    t.audioTrack = track;
     state.tracks.set(roomName, t);
     console.log(`[admin] 🎧 got AUDIO for ${roomName}`);
-  } catch (e) {
-    console.warn(`[admin] attachAudio failed for ${roomName}:`, e);
-  }
+  } catch (e) { console.warn(`[admin] attachAudio failed for ${roomName}:`, e); }
 }
 
-/** إجبار الاشتراك على جميع الـ publications المتاحة */
 async function forceSubscribeAll(room) {
   try {
     const { Track } = lk;
@@ -124,31 +118,25 @@ async function forceSubscribeAll(room) {
           if (!t) return;
           if (t.kind === Track.Kind.Video) attachVideo(room.name || '??', t);
           else if (t.kind === Track.Kind.Audio) attachAudio(room.name || '??', t);
-        } catch (e) {
-          console.warn('[admin] forceSubscribe pub error:', e);
-        }
+        } catch (e) { console.warn('[admin] forceSubscribe pub error:', e); }
       });
     });
-  } catch (e) {
-    console.warn('[admin] forceSubscribeAll error:', e);
-  }
+  } catch (e) { console.warn('[admin] forceSubscribeAll error:', e); }
 }
 
 async function connectRoom(roomName, identity) {
-  const tk = await API.token(roomName, identity, /*publish*/ false, /*subscribe*/ true);
+  const tk = await API.token(roomName, identity, false, true);
   const room = new lk.Room({ adaptiveStream: false, autoSubscribe: true });
   room.name = roomName;
 
   const { RoomEvent, Track } = lk;
-
-  room.on(RoomEvent.TrackSubscribed, (track /* RemoteTrack */, pub, participant) => {
+  room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
     try {
       if (track.kind === Track.Kind.Video) attachVideo(roomName, track);
       else if (track.kind === Track.Kind.Audio) attachAudio(roomName, track);
       console.log(`[admin] ➕ TrackSubscribed ${track.kind} from ${participant?.identity} in ${roomName}`);
     } catch(e){ console.warn('[admin] attach on TrackSubscribed error', e); }
   });
-
   room.on(RoomEvent.TrackPublished, async (pub, participant) => {
     try {
       if (typeof pub.setSubscribed === 'function' && !pub.isSubscribed) {
@@ -160,19 +148,16 @@ async function connectRoom(roomName, identity) {
         else if (t.kind === Track.Kind.Audio) attachAudio(roomName, t);
       }
       console.log(`[admin] 📣 TrackPublished kind=${pub.kind} by ${participant?.identity} in ${roomName}`);
-    } catch (e) {
-      console.warn('[admin] TrackPublished subscribe error:', e);
-    }
+    } catch (e) { console.warn('[admin] TrackPublished subscribe error:', e); }
   });
 
   await room.connect(tk.url, tk.token);
   console.log(`[admin] ✅ connected to ${roomName}`);
-
   await forceSubscribeAll(room);
   state.rooms.set(roomName, { room });
 }
 
-/* ====== Watch publisher (canvas 1080p + audio selection) ====== */
+/* Mix publisher 1080p + audio selection */
 function computeLayout(n, W, H) {
   const rects = [];
   if (n <= 1) rects.push({x:0, y:0, w:W, h:H});
@@ -181,59 +166,46 @@ function computeLayout(n, W, H) {
     rects.push({x:0,y:0,w:W/2,h:H},{x:W/2,y:0,w:W/2,h:H/2},{x:W/2,y:H/2,w:W/2,h:H/2});
   } else if (n === 4) {
     const w=W/2,h=H/2; rects.push({x:0,y:0,w,h},{x:w,y:0,w,h},{x:0,y:h,w,h},{x:w,y:h,w,h});
-  } else { // 5..6 : grid 3x2
+  } else {
     const w=W/3,h=H/2;
     for (let r=0;r<2;r++) for (let c=0;c<3;c++) rects.push({x:c*w,y:r*h,w,h});
   }
   return rects.slice(0, n);
 }
-
 function ensurePubCanvas() {
   if (state.pub.canvas) return;
   const c = document.getElementById('mixerCanvas') || (()=> {
     const el = document.createElement('canvas');
-    el.id = 'mixerCanvas';
-    el.width = 1920; el.height = 1080;
-    el.classList.add('hidden');
-    document.body.appendChild(el);
-    return el;
+    el.id = 'mixerCanvas'; el.width = 1920; el.height = 1080;
+    el.classList.add('hidden'); document.body.appendChild(el); return el;
   })();
-  c.width = 1920;
-  c.height = 1080;
+  c.width = 1920; c.height = 1080;
   state.pub.canvas = c;
   state.pub.ctx = c.getContext('2d');
 }
-
 function clearPubAudio() {
-  if (state.pub.audioCtx) {
-    try { state.pub.audioCtx.close(); } catch {}
-  }
-  state.pub.audioCtx = null;
-  state.pub.audioDest = null;
+  if (state.pub.audioCtx) { try { state.pub.audioCtx.close(); } catch {} }
+  state.pub.audioCtx = null; state.pub.audioDest = null;
 }
 
 async function startWatchPublisher(selection) {
   const s = API.session(); if (!s) return;
   const { Room, LocalVideoTrack, LocalAudioTrack } = lk;
-
   const watchRec = state.currentWatch;
   if (!watchRec?.roomName) { console.warn('[admin] no watch roomName'); return; }
 
   await stopWatchPublisher();
 
   ensurePubCanvas();
-  const W = state.pub.canvas.width;   // 1920
-  const H = state.pub.canvas.height;  // 1080
+  const W = state.pub.canvas.width, H = state.pub.canvas.height;
 
   state.pub.selection = selection.slice();
   state.pub.layout = computeLayout(selection.length, W, H);
 
-  // الفيديو
   const stream = state.pub.canvas.captureStream(state.pub.fps);
   const vms = stream.getVideoTracks()[0];
   state.pub.vTrack = new LocalVideoTrack(vms);
 
-  // الصوت المختار فقط
   clearPubAudio();
   const chosen = state.pub.audioChoice;
   if (chosen) {
@@ -247,12 +219,10 @@ async function startWatchPublisher(selection) {
       src.connect(state.pub.audioDest);
       const ams = state.pub.audioDest.stream.getAudioTracks()[0];
       if (ams) state.pub.aTrack = new LocalAudioTrack(ams);
-    } else {
-      console.warn('[admin] chosen audio track not ready:', chosen);
-    }
+    } else { console.warn('[admin] chosen audio track not ready:', chosen); }
   }
 
-  const tk = await API.token(watchRec.roomName, `mixer-${s.username}`, /*publish*/ true, /*subscribe*/ false);
+  const tk = await API.token(watchRec.roomName, `mixer-${s.username}`, true, false);
   state.pub.room = new Room({ adaptiveStream: false, autoSubscribe: false });
   await state.pub.room.connect(tk.url, tk.token);
 
@@ -260,32 +230,28 @@ async function startWatchPublisher(selection) {
   if (state.pub.aTrack) await state.pub.room.localParticipant.publishTrack(state.pub.aTrack);
   console.log('[admin] ✅ publishing 1080p mix to watch room:', watchRec.roomName, 'audioFrom=', chosen || 'none');
 
-  // حلقة الرسم مع طبقة الـ Timeline
   const draw = () => {
     const { ctx, canvas } = state.pub;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
 
     // طبقة المدن
     state.pub.selection.forEach((roomName, i) => {
       const r = state.pub.layout[i];
       const v = document.getElementById(`v-${roomName}`);
       if (v && v.readyState >= 2) {
-        try { ctx.drawImage(v, r.x, r.y, r.w, r.h); } catch {}
+        try { ctx.drawImage(v, r.x, r.y, r.w, r.h); } catch (e) {}
       } else {
-        ctx.fillStyle = '#222';
-        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.fillStyle = '#222'; ctx.fillRect(r.x, r.y, r.w, r.h);
       }
     });
 
-    // طبقة الـ Timeline (نص/صورة/فيديو)
+    // طبقة الـ Timeline
     renderTimelineOverlays(ctx, canvas);
 
     state.pub.rafId = requestAnimationFrame(draw);
   };
   draw();
 }
-
 async function stopWatchPublisher() {
   try { if (state.pub.rafId) cancelAnimationFrame(state.pub.rafId); } catch {}
   state.pub.rafId = null;
@@ -298,19 +264,15 @@ async function stopWatchPublisher() {
     }
   } catch {}
   state.pub.room = null;
-
   try { state.pub.vTrack?.stop(); } catch{}; state.pub.vTrack = null;
   try { state.pub.aTrack?.stop(); } catch{}; state.pub.aTrack = null;
-
   clearPubAudio();
 }
 
-/* ====== Timeline support in admin.js ====== */
-
+/* Timeline overlay (مع crossOrigin للصور/الفيديو) */
 function overlayRect(canvasW, canvasH, pos, baseW=0.4, baseH=0.4) {
   if (pos === 'full') return {x:0,y:0,w:canvasW,h:canvasH};
-  const w = Math.floor(canvasW * baseW);
-  const h = Math.floor(canvasH * baseH);
+  const w = Math.floor(canvasW * baseW), h = Math.floor(canvasH * baseH);
   const map = {
     'center': { x:(canvasW-w)/2, y:(canvasH-h)/2 },
     'top-left': { x:20, y:20 },
@@ -321,14 +283,14 @@ function overlayRect(canvasW, canvasH, pos, baseW=0.4, baseH=0.4) {
   const p = map[pos] || map['center'];
   return { x:p.x, y:p.y, w, h };
 }
-
 function loadAsset(ev) {
   const src = ev?.payload?.src;
   if (!src) return null;
   if (state.assets.has(src)) return state.assets.get(src);
+
   if (ev.type === 'image') {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    img.crossOrigin = 'anonymous';           // مهم قبل src
     img.src = src;
     const rec = { kind:'image', el: img };
     state.assets.set(src, rec);
@@ -336,80 +298,90 @@ function loadAsset(ev) {
   }
   if (ev.type === 'video') {
     const v = document.createElement('video');
+    v.crossOrigin = 'anonymous';             // مهم قبل src
+    v.muted = true; v.loop = true; v.playsInline = true;
+    v.preload = 'auto';
     v.src = src;
-    v.muted = true; v.loop = true; v.autoplay = true; v.playsInline = true;
-    v.play().catch(()=>{});
+    v.load();
+    v.addEventListener('canplay', () => { v.play().catch(()=>{}); }, { once:true });
     const rec = { kind:'video', el: v };
     state.assets.set(src, rec);
     return rec;
   }
   return null;
 }
-
-function renderTimelineOverlays(ctx, canvas) {
-  const tl = state.timeline;
-  if (!tl?.running || !Array.isArray(tl.events) || !tl.startedAt) return;
-  const now = Date.now();
-  const t = now - tl.startedAt;
-
-  for (const ev of tl.events) {
-    const start = ev.startOffsetMs|0;
-    const end = start + (ev.durationMs|0);
-    if (t < start || t > end) continue;
-
-    const pos = ev.payload?.pos || 'center';
-    if (ev.type === 'text') {
-      const r = overlayRect(canvas.width, canvas.height, pos, 0.6, 0.24);
-      // خلفية نصف شفافة
-      ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(r.x, r.y, r.w, r.h);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 42px system-ui,Segoe UI,Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const text = (ev.payload?.text || '').slice(0, 200);
-      wrapFillText(ctx, text, r.x + r.w/2, r.y + r.h/2, r.w - 40, 48);
-      ctx.restore();
-    } else if (ev.type === 'image') {
-      const asset = loadAsset(ev);
-      const img = asset?.el;
-      if (img && img.complete) {
-        const r = overlayRect(canvas.width, canvas.height, pos, 0.5, 0.5);
-        try { ctx.drawImage(img, r.x, r.y, r.w, r.h); } catch {}
-      }
-    } else if (ev.type === 'video') {
-      const asset = loadAsset(ev);
-      const v = asset?.el;
-      if (v && v.readyState >= 2) {
-        const r = overlayRect(canvas.width, canvas.height, pos, 0.6, 0.6);
-        try { ctx.drawImage(v, r.x, r.y, r.w, r.h); } catch {}
-      }
-    }
-    // ملاحظة: نوع 'audio' غير ممزوج في مخرج المشاهدة حالياً (الصوت المختار يبقى من مدينة واحدة).
-  }
-}
-
 function wrapFillText(ctx, text, cx, cy, maxWidth, lineHeight) {
-  const words = text.split(/\s+/);
-  const lines = [];
-  let line = '';
+  const words = text.split(/\s+/); const lines = []; let line = '';
   for (const w of words) {
     const test = line ? line + ' ' + w : w;
-    const m = ctx.measureText(test);
-    if (m.width > maxWidth && line) { lines.push(line); line = w; }
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = w; }
     else line = test;
   }
   if (line) lines.push(line);
   const totalH = lines.length * lineHeight;
   let y = cy - totalH/2 + lineHeight/2;
-  for (const L of lines) {
-    ctx.fillText(L, cx, y);
-    y += lineHeight;
+  for (const L of lines) { ctx.fillText(L, cx, y); y += lineHeight; }
+}
+function renderTimelineOverlays(ctx, canvas) {
+  const tl = state.timeline;
+  if (!tl?.running || !Array.isArray(tl.events) || !tl.startedAt) return;
+  const now = Date.now(); const t = now - tl.startedAt;
+
+  for (const ev of tl.events) {
+    const start = ev.startOffsetMs|0; const end = start + (ev.durationMs|0);
+    if (t < start || t > end) continue;
+
+    const pos = ev.payload?.pos || 'center';
+    if (ev.type === 'text') {
+      const r = overlayRect(canvas.width, canvas.height, pos, 0.6, 0.24);
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 42px system-ui,Segoe UI,Arial';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const text = (ev.payload?.text || '').slice(0, 200);
+      try { wrapFillText(ctx, text, r.x + r.w/2, r.y + r.h/2, r.w - 40, 48); } catch {}
+      ctx.restore();
+    } else if (ev.type === 'image') {
+      const asset = loadAsset(ev); const img = asset?.el;
+      if (img && img.complete) {
+        const r = overlayRect(canvas.width, canvas.height, pos, 0.5, 0.5);
+        try { ctx.drawImage(img, r.x, r.y, r.w, r.h); } catch {}
+      }
+    } else if (ev.type === 'video') {
+      const asset = loadAsset(ev); const v = asset?.el;
+      if (v && v.readyState >= 2) {
+        const r = overlayRect(canvas.width, canvas.height, pos, 0.6, 0.6);
+        try { ctx.drawImage(v, r.x, r.y, r.w, r.h); } catch {}
+      }
+    }
+    // audio: لا ندمجه في مخرج المشاهدة (الصوت من مدينة واحدة حسب اختيار المشرف)
   }
 }
 
-/* ====== View mode modal (اختيار مصادر المكس + اختيار الصوت) ====== */
+/* Timeline fetch/poll */
+async function refreshTimeline() {
+  try {
+    if (!state.currentWatch?.id) return;
+    const s = API.session();
+    const r = await fetch('/api/timeline/' + state.currentWatch.id, {
+      headers: { 'Authorization':'Bearer ' + (s?.token||'') }
+    });
+    if (!r.ok) { console.warn('[admin] timeline fetch not ok'); return; }
+    const tl = await r.json();
+    state.timeline = {
+      running: !!tl?.running,
+      startedAt: tl?.startedAt || null,
+      events: Array.isArray(tl?.events) ? tl.events : []
+    };
+    console.log('[admin] timeline sync:', state.timeline.running, 'events=', state.timeline.events.length);
+  } catch (e) { console.warn('[admin] timeline fetch err', e); }
+}
+function startTimelinePolling() {
+  clearInterval(state.tlPollId);
+  state.tlPollId = setInterval(refreshTimeline, 1500);
+}
+
+/* View modal (sources + audio pick) */
 function openViewModal() {
   const modal = document.getElementById('viewModal');
   const sel = document.getElementById('camCount');
@@ -419,27 +391,16 @@ function openViewModal() {
     const n = parseInt(sel.value, 10) || 6;
     slots.innerHTML = '';
 
-    // صف لاختيار "بدون صوت"
     const noneRow = h('div', { class:'grid cols-2', style:'align-items:center' }, [
       h('div', {}, [ h('label', { text:'صوت المكس:' }) ]),
       (() => {
         const wrap = document.createElement('div');
-        wrap.style.display = 'flex';
-        wrap.style.alignItems = 'center';
-        wrap.style.gap = '10px';
-
-        const none = document.createElement('label');
-        none.className = 'badge';
-        const noneInp = document.createElement('input');
-        noneInp.type = 'radio';
-        noneInp.name = 'audioSel';
-        noneInp.value = '';
+        wrap.style.display = 'flex'; wrap.style.alignItems = 'center'; wrap.style.gap = '10px';
+        const none = document.createElement('label'); none.className = 'badge';
+        const noneInp = document.createElement('input'); noneInp.type = 'radio'; noneInp.name = 'audioSel'; noneInp.value = '';
         noneInp.checked = !state.pub.audioChoice;
-        none.appendChild(noneInp);
-        none.appendChild(document.createTextNode('بدون صوت'));
-        wrap.appendChild(none);
-
-        return wrap;
+        none.appendChild(noneInp); none.appendChild(document.createTextNode('بدون صوت'));
+        wrap.appendChild(none); return wrap;
       })()
     ]);
     slots.appendChild(noneRow);
@@ -458,17 +419,10 @@ function openViewModal() {
           })()
         ]),
         (() => {
-          const lbl = document.createElement('label');
-          lbl.className = 'badge';
-          const r = document.createElement('input');
-          r.type = 'radio';
-          r.name = 'audioSel';
-          r.value = `slot-${i}`;
-          const pre = state.pub.audioChoice;
-          if (pre && CITY_ROOMS[i] === pre) r.checked = true;
-          const text = document.createTextNode('استخدم صوت هذا المصدر');
-          lbl.appendChild(r);
-          lbl.appendChild(text);
+          const lbl = document.createElement('label'); lbl.className = 'badge';
+          const r = document.createElement('input'); r.type = 'radio'; r.name = 'audioSel'; r.value = `slot-${i}`;
+          const pre = state.pub.audioChoice; if (pre && CITY_ROOMS[i] === pre) r.checked = true;
+          lbl.appendChild(r); lbl.appendChild(document.createTextNode('استخدم صوت هذا المصدر'));
           return lbl;
         })()
       ]);
@@ -476,38 +430,25 @@ function openViewModal() {
     }
   };
 
-  sel.onchange = rebuild;
-  rebuild();
+  sel.onchange = rebuild; rebuild();
   modal.classList.add('open');
 }
 function closeViewModal(){ document.getElementById('viewModal')?.classList.remove('open'); }
-
 function readSelectionFromSlots() {
-  const sel = document.getElementById('camCount');
-  const n = parseInt(sel.value, 10) || 6;
-  const out = [];
-  for (let i=0;i<n;i++){
-    const s = document.getElementById(`slot-${i}`);
-    if (s && s.value) out.push(s.value);
-  }
-  // حدد الصوت المختار
+  const sel = document.getElementById('camCount'); const n = parseInt(sel.value, 10) || 6; const out = [];
+  for (let i=0;i<n;i++){ const s = document.getElementById(`slot-${i}`); if (s && s.value) out.push(s.value); }
   const chosen = document.querySelector('input[name="audioSel"]:checked');
   if (chosen && chosen.value && chosen.value.startsWith('slot-')) {
-    const idx = parseInt(chosen.value.slice(5), 10);
-    const s = document.getElementById(`slot-${idx}`);
+    const idx = parseInt(chosen.value.slice(5), 10); const s = document.getElementById(`slot-${idx}`);
     state.pub.audioChoice = s?.value || null;
-  } else {
-    state.pub.audioChoice = null; // بدون صوت
-  }
+  } else { state.pub.audioChoice = null; }
   return out;
 }
 
-/* ====== Toolbar actions ====== */
+/* Toolbar */
 function wireTopbar() {
   const monitor = document.getElementById('monitorAudio');
-  monitor?.addEventListener('change', () => {
-    state.monitorAudio = !!monitor.checked;
-  }, { passive: true });
+  monitor?.addEventListener('change', () => { state.monitorAudio = !!monitor.checked; }, { passive: true });
 
   document.getElementById('viewModeBtn')?.addEventListener('click', openViewModal);
   document.getElementById('closeModalBtn')?.addEventListener('click', closeViewModal);
@@ -516,8 +457,10 @@ function wireTopbar() {
   document.getElementById('stopBtn')?.addEventListener('click', stopWatch);
   document.getElementById('goWatchBtn')?.addEventListener('click', goWatchNow);
 
-  // التزامن مع تغييرات التايملاين من المودال
-  window.addEventListener('timeline:changed', refreshTimeline, false);
+  window.addEventListener('timeline:changed', async () => {
+    await refreshTimeline();
+    startTimelinePolling();
+  }, false);
 }
 
 async function createWatchFromModal() {
@@ -532,117 +475,66 @@ async function createWatchFromModal() {
     alert('تم إنشاء جلسة المشاهدة.');
 
     await startWatchPublisher(selection);
-    await refreshTimeline();
+    await refreshTimeline(); startTimelinePolling();
   } catch (e) {
     alert('فشل إنشاء جلسة المشاهدة'); console.error(e);
   }
 }
-
 async function applySelectionToWatch() {
   try {
     if (!state.currentWatch?.id) { alert('لا توجد جلسة نشطة'); return; }
     const selection = readSelectionFromSlots();
     const s = API.session();
     const r = await fetch('/api/watch/' + state.currentWatch.id, {
-      method:'PUT',
-      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + (s?.token||'') },
+      method:'PUT', headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + (s?.token||'') },
       body: JSON.stringify({ selection })
     });
     if (!r.ok) throw new Error('apply failed');
-    const rec = await r.json();
-    state.currentWatch = rec;
-    alert('تم تطبيق التغييرات.');
-
+    const rec = await r.json(); state.currentWatch = rec; alert('تم تطبيق التغييرات.');
     await startWatchPublisher(selection);
-  } catch (e) {
-    alert('تعذر تطبيق التغييرات'); console.error(e);
-  }
+  } catch (e) { alert('تعذر تطبيق التغييرات'); console.error(e); }
 }
-
 async function stopWatch() {
   try {
     if (!state.currentWatch?.id) {
-      const active = await API.getActiveWatch();
-      if (!active) { alert('لا توجد جلسة نشطة'); return; }
+      const active = await API.getActiveWatch(); if (!active) { alert('لا توجد جلسة نشطة'); return; }
       state.currentWatch = active;
     }
     const s = API.session();
     const r = await fetch('/api/watch/' + state.currentWatch.id + '/stop', {
-      method:'POST',
-      headers: { 'Authorization':'Bearer ' + (s?.token||'') }
+      method:'POST', headers: { 'Authorization':'Bearer ' + (s?.token||'') }
     });
     if (!r.ok) throw new Error('stop failed');
-    state.currentWatch.active = false;
-    document.getElementById('stopBtn').disabled = true;
+    state.currentWatch.active = false; document.getElementById('stopBtn').disabled = true;
     alert('تم إيقاف البث.');
-  } catch (e) {
-    alert('تعذر الإيقاف'); console.error(e);
-  } finally {
-    await stopWatchPublisher();
-    clearInterval(state.tlPollId); state.tlPollId = null;
-  }
+  } catch (e) { alert('تعذر الإيقاف'); console.error(e); }
+  finally { await stopWatchPublisher(); clearInterval(state.tlPollId); state.tlPollId = null; }
 }
-
 async function goWatchNow() {
   try {
     const rec = state.currentWatch?.id ? state.currentWatch : (await API.getActiveWatch());
     if (!rec) { alert('لا توجد جلسة نشطة'); return; }
     window.open('/watch.html?id=' + rec.id, '_blank');
-  } catch (e) {
-    alert('تعذر فتح المشاهدة'); console.error(e);
-  }
+  } catch (e) { alert('تعذر فتح المشاهدة'); console.error(e); }
 }
 
-/* ====== Timeline fetch/poll ====== */
-async function refreshTimeline() {
-  try {
-    if (!state.currentWatch?.id) return;
-    const s = API.session();
-    const r = await fetch('/api/timeline/' + state.currentWatch.id, {
-      headers: { 'Authorization':'Bearer ' + (s?.token||'') }
-    });
-    if (!r.ok) return;
-    const tl = await r.json();
-    state.timeline = {
-      running: !!tl?.running,
-      startedAt: tl?.startedAt || null,
-      events: Array.isArray(tl?.events) ? tl.events : []
-    };
-  } catch {}
-}
-
-function startTimelinePolling() {
-  clearInterval(state.tlPollId);
-  state.tlPollId = setInterval(refreshTimeline, 1500);
-}
-
-/* ====== init ====== */
+/* Init + timeline polling */
 async function startPreview() {
   const s = API.session();
-  if (!s || s.role !== 'admin') {
-    location.href = '/'; return;
-  }
-  lk = await ensureLivekit();
-  try { lk.setLogLevel?.('info'); } catch {}
-
+  if (!s || s.role !== 'admin') { location.href = '/'; return; }
+  lk = await ensureLivekit(); try { lk.setLogLevel?.('info'); } catch {}
   buildPreviewGrid();
-
-  // اتصل بكل غرف المدن كمشترك
   for (let i=0;i<CITY_ROOMS.length;i++){
     const rn = CITY_ROOMS[i];
     try { await connectRoom(rn, `admin-${s.username}-${i+1}`); }
     catch (e) { console.warn('[admin] failed to connect', rn, e?.message || e); }
   }
 }
-
 (async function init() {
   const s = API.session();
   if (!s || s.role !== 'admin') { location.href = '/'; return; }
-
   document.getElementById('logoutBtn')?.addEventListener('click', async (e) => {
-    e.preventDefault();
-    try { await API.logout(); } catch {}
-    try { localStorage.removeItem('session'); } catch {}
+    e.preventDefault(); try { await API.logout(); } catch {} try { localStorage.removeItem('session'); } catch {}
     location.replace('/');
   }, { passive:false });
 
@@ -655,10 +547,9 @@ async function startPreview() {
       state.currentWatch = active;
       document.getElementById('stopBtn').disabled = false;
       document.getElementById('goWatchBtn').disabled = false;
-      state.pub.audioChoice = null; // ابدأ بصامت حتى يختار المشرف
+      state.pub.audioChoice = null;
       await startWatchPublisher(active.selection || []);
-      startTimelinePolling();
-      await refreshTimeline();
+      await refreshTimeline(); startTimelinePolling();
     }
   } catch {}
 })();

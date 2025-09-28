@@ -1,7 +1,17 @@
+// ===== API Base + helpers =====
+(function(){
+  const raw = (window.API_BASE ?? '');
+  const base = (''+raw).replace(/\/+$/,''); // بدون / في النهاية
+  window.apiFetch = function apiFetch(path, opts) {
+    const url = base + path;
+    return fetch(url, opts);
+  };
+})();
+
 const API = {
-  async getConfig() { const r = await fetch('/api/config'); return r.json(); },
+  async getConfig() { const r = await apiFetch('/api/config'); return r.json(); },
   async login(username, password) {
-    const r = await fetch('/api/login', {
+    const r = await apiFetch('/api/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
@@ -18,12 +28,12 @@ const API = {
     const s = API.session();
     if (!s) return;
     try {
-      await fetch('/api/logout', { method:'POST', headers: { 'Authorization': 'Bearer ' + (s?.token || '') } });
+      await apiFetch('/api/logout', { method:'POST', headers: { 'Authorization': 'Bearer ' + (s?.token || '') } });
     } catch(_) {}
   },
   async token(roomName, identity, publish=false, subscribe=true) {
     const s = API.session();
-    const r = await fetch('/api/token', {
+    const r = await apiFetch('/api/token', {
       method: 'POST',
       headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + (s?.token || '') },
       body: JSON.stringify({ roomName, publish, subscribe, identity })
@@ -33,7 +43,7 @@ const API = {
   },
   async createWatch(selection) {
     const s = API.session();
-    const r = await fetch('/api/create-watch', {
+    const r = await apiFetch('/api/create-watch', {
       method: 'POST',
       headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + (s?.token || '') },
       body: JSON.stringify({ selection })
@@ -43,12 +53,12 @@ const API = {
   },
   async getActiveWatch() {
     const s = API.session();
-    const r = await fetch('/api/watch/active', { headers: { 'Authorization':'Bearer ' + (s?.token || '') } });
+    const r = await apiFetch('/api/watch/active', { headers: { 'Authorization':'Bearer ' + (s?.token || '') } });
     return r.json();
   },
   async getWatch(id) {
     const s = API.session();
-    const r = await fetch('/api/watch/' + id, { headers: { 'Authorization':'Bearer ' + (s?.token || '') } });
+    const r = await apiFetch('/api/watch/' + id, { headers: { 'Authorization':'Bearer ' + (s?.token || '') } });
     if (!r.ok) throw new Error('غير موجود');
     return r.json();
   }

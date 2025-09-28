@@ -1,4 +1,8 @@
 // ===== Backup/Restore (Admin) =====
+
+// public/backup-admin.js
+console.log('[backup-admin] placeholder loaded');
+
 (function backupAdmin() {
   const exportBtn = document.getElementById('exportBtn');
   const importBtn = document.getElementById('importBtn');
